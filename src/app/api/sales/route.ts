@@ -102,11 +102,6 @@ export async function POST(req: NextRequest) {
 
     // If credit sale, update customer ledger
     if (saleData.payment_status === 'pending' && saleData.customer_id) {
-      await supabase.from('customers').update({
-        credit_balance: supabase.rpc ? final : final,
-      }).eq('id', saleData.customer_id)
-
-      // Simple increment
       const { data: cust } = await supabase.from('customers').select('credit_balance').eq('id', saleData.customer_id).single()
       await supabase.from('customers').update({ credit_balance: (cust?.credit_balance || 0) + final }).eq('id', saleData.customer_id)
 
