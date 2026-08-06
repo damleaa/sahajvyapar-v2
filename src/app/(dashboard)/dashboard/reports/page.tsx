@@ -166,7 +166,7 @@ export default function ReportsPage() {
                   {data?.byPaymentMethod?.length > 0 ? (
                     <ResponsiveContainer width="100%" height={220}>
                       <PieChart>
-                        <Pie data={data.byPaymentMethod} dataKey="revenue" nameKey="method" cx="50%" cy="50%" outerRadius={80} label={({ method, percent }) => `${method} ${((percent||0)*100).toFixed(0)}%`} labelLine={false}>
+                        <Pie data={data.byPaymentMethod} dataKey="revenue" nameKey="method" cx="50%" cy="50%" outerRadius={80} label={(props: any) => `${props.method} ${((props.percent||0)*100).toFixed(0)}%`} labelLine={false}>
                           {data.byPaymentMethod.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                         </Pie>
                         <Tooltip formatter={(v: any) => money(Number(v))} />
@@ -240,7 +240,7 @@ export default function ReportsPage() {
                   {data?.byPaymentStatus?.length > 0 ? (
                     <ResponsiveContainer width="100%" height={180}>
                       <PieChart>
-                        <Pie data={data.byPaymentStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={70} label={({ status, count }) => `${status}: ${count}`}>
+                        <Pie data={data.byPaymentStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={70} label={(props: any) => `${props.status}: ${props.count}`}>
                           {data.byPaymentStatus.map((_: any, i: number) => <Cell key={i} fill={['#22c55e','#ef4444','#f59e0b'][i]} />)}
                         </Pie>
                         <Tooltip />
