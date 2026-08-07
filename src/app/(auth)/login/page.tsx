@@ -100,7 +100,7 @@ export default function LoginPage() {
 
           <Link href="/register"
             className="flex items-center justify-center gap-2 w-full py-2.5 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-all">
-            New business? Start 14-day free trial →
+            New business? Start 7-day free trial →
           </Link>
 
           <div className="mt-5 p-3 bg-slate-800/50 rounded-lg">
