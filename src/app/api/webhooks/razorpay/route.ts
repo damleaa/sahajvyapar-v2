@@ -93,15 +93,17 @@ export async function POST(req: NextRequest) {
           razorpay_subscription_id: subscriptionId,
         }).eq('id', tenant.id)
 
-        // Log payment
-        await supabase.from('subscription_logs').insert({
-          tenant_id: tenant.id,
-          event_type: eventType,
-          razorpay_subscription_id: subscriptionId,
-          razorpay_plan_id: planId,
-          amount: planInfo.amount,
-          status: 'success',
-        }).catch(() => {}) // Table may not exist yet, ignore
+        // Log payment (ignore if table doesn't exist)
+        try {
+          await supabase.from('subscription_logs').insert({
+            tenant_id: tenant.id,
+            event_type: eventType,
+            razorpay_subscription_id: subscriptionId,
+            razorpay_plan_id: planId,
+            amount: planInfo.amount,
+            status: 'success',
+          })
+        } catch (_) {}
       }
       break
 
