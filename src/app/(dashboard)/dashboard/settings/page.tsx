@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useToast } from '@/components/ui'
+import SubscriptionSection from '@/components/SubscriptionSection'
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState<any>({})
@@ -129,6 +130,9 @@ export default function SettingsPage() {
 
         <button onClick={saveProfile} disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save Business Profile'}</button>
       </div>
+
+      {/* Subscription */}
+      <SubscriptionSection />
 
       {/* Categories */}
       <div className="card p-6">
