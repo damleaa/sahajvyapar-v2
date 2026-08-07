@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck,
-  ClipboardList, RotateCcw, BarChart3, Store, Settings, LogOut, Sparkles, ReceiptIndianRupee
+  ClipboardList, RotateCcw, BarChart3, Store, Settings, LogOut, Sparkles, ReceiptIndianRupee, Shield
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { canAccess, type PlanType } from '@/types'
