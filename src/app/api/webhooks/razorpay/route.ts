@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 
 const PLAN_MAP: Record<string, { plan: string; amount: number }> = {
   'plan_TMlnM2FDQdMa6h': { plan: 'starter', amount: 399 },
@@ -9,12 +8,11 @@ const PLAN_MAP: Record<string, { plan: string; amount: number }> = {
   'plan_TMlp7WcudeUjQ1': { plan: 'pro', amount: 999 },
 }
 
-async function getAdminClient() {
-  const cookieStore = await cookies()
-  return createServerClient(
+// Use direct Supabase client with service role — no cookies needed for webhooks
+function getAdminClient() {
+  return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 }
 
@@ -30,7 +28,7 @@ export async function POST(req: NextRequest) {
     .digest('hex')
 
   if (expectedSignature !== signature) {
-    console.error('Invalid webhook signature')
+    console.error('Webhook: Invalid signature')
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
@@ -38,49 +36,55 @@ export async function POST(req: NextRequest) {
   const { event: eventType, payload } = event
   const subscription = payload?.subscription?.entity
 
+  console.log(`Webhook received: ${eventType}`)
+
   if (!subscription) {
     return NextResponse.json({ received: true })
   }
 
-  const supabase = await getAdminClient()
+  const supabase = getAdminClient()
   const subscriptionId = subscription.id
   const planId = subscription.plan_id
   const planInfo = PLAN_MAP[planId]
 
-  console.log(`Webhook: ${eventType} for subscription ${subscriptionId}`)
+  console.log(`Processing subscription: ${subscriptionId}, plan: ${planId}, event: ${eventType}`)
 
   // Find tenant by subscription ID
   const { data: tenant } = await supabase
     .from('tenants')
-    .select('id, email, business_name')
+    .select('id, email, business_name, plan')
     .eq('razorpay_subscription_id', subscriptionId)
     .single()
 
   if (!tenant) {
-    // Try to find by customer email (first payment)
-    const customerEmail = payload?.subscription?.entity?.notes?.email
-    if (customerEmail) {
+    // Try by email from notes
+    const email = subscription.notes?.email
+    console.log(`Tenant not found by subscription ID, trying email: ${email}`)
+    if (email) {
       const { data: tenantByEmail } = await supabase
         .from('tenants')
         .select('id, email')
-        .eq('email', customerEmail)
+        .eq('email', email)
         .single()
 
       if (tenantByEmail && planInfo) {
+        const nextMonth = new Date()
+        nextMonth.setDate(nextMonth.getDate() + 32)
         await supabase.from('tenants').update({
           razorpay_subscription_id: subscriptionId,
           plan: planInfo.plan,
           plan_status: 'active',
-          plan_expires_at: new Date(Date.now() + 32 * 24 * 60 * 60 * 1000).toISOString(),
+          plan_expires_at: nextMonth.toISOString(),
+          is_active: true,
         }).eq('id', tenantByEmail.id)
+        console.log(`Activated tenant by email: ${email}`)
       }
     }
     return NextResponse.json({ received: true })
   }
 
-  const now = new Date()
-  const nextMonth = new Date(now)
-  nextMonth.setDate(nextMonth.getDate() + 32) // 32 days buffer
+  const nextMonth = new Date()
+  nextMonth.setDate(nextMonth.getDate() + 32)
 
   switch (eventType) {
     case 'subscription.activated':
@@ -90,20 +94,12 @@ export async function POST(req: NextRequest) {
           plan: planInfo.plan,
           plan_status: 'active',
           plan_expires_at: nextMonth.toISOString(),
-          razorpay_subscription_id: subscriptionId,
+          is_active: true,
+          grace_period_ends_at: null,
+          suspended_at: null,
+          suspension_reason: null,
         }).eq('id', tenant.id)
-
-        // Log payment (ignore if table doesn't exist)
-        try {
-          await supabase.from('subscription_logs').insert({
-            tenant_id: tenant.id,
-            event_type: eventType,
-            razorpay_subscription_id: subscriptionId,
-            razorpay_plan_id: planId,
-            amount: planInfo.amount,
-            status: 'success',
-          })
-        } catch (_) {}
+        console.log(`Activated: ${tenant.email} on ${planInfo.plan}`)
       }
       break
 
@@ -111,17 +107,22 @@ export async function POST(req: NextRequest) {
       await supabase.from('tenants').update({
         plan_status: 'cancelled',
       }).eq('id', tenant.id)
+      console.log(`Cancelled: ${tenant.email}`)
       break
 
     case 'subscription.halted':
       await supabase.from('tenants').update({
         plan_status: 'expired',
       }).eq('id', tenant.id)
+      console.log(`Halted: ${tenant.email}`)
       break
 
     case 'subscription.pending':
-      // Payment pending - don't change status yet
+      console.log(`Pending: ${tenant.email}`)
       break
+
+    default:
+      console.log(`Unhandled event: ${eventType}`)
   }
 
   return NextResponse.json({ received: true })
