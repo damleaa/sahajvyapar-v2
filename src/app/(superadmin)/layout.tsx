@@ -2,12 +2,17 @@ import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 
 export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {
-  // Check if accessing from admin subdomain or allow direct access in dev
   const headersList = await headers()
   const host = headersList.get('host') || ''
-  const isAdminDomain = host.startsWith('admin.') || host === 'localhost:4000' || host.includes('localhost')
 
-  if (!isAdminDomain) {
+  // Allow: admin subdomain, localhost (dev), or main domain (until admin DNS is set up)
+  const isAllowed =
+    host.startsWith('admin.') ||
+    host.includes('localhost') ||
+    host.includes('sahajvyapar.in') ||
+    host.includes('vercel.app')
+
+  if (!isAllowed) {
     redirect('/')
   }
 
