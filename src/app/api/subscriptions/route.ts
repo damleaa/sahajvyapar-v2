@@ -2,26 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import Razorpay from 'razorpay'
 
 const PLAN_IDS: Record<string, string> = {
-  starter: 'plan_TMlnM2FDQdMa6h',
-  growth: 'plan_TMloXZIHDd9U86',
-  pro: 'plan_TMlp7WcudeUjQ1',
+  starter: process.env.RAZORPAY_PLAN_STARTER || 'plan_TMlnM2FDQdMa6h',
+  growth: process.env.RAZORPAY_PLAN_GROWTH || 'plan_TMloXZIHDd9U86',
+  pro: process.env.RAZORPAY_PLAN_PRO || 'plan_TMlp7WcudeUjQ1',
 }
 
-const PLAN_PRICES: Record<string, number> = {
-  starter: 399,
-  growth: 699,
-  pro: 999,
-}
-
-function getRazorpay() {
-  return new Razorpay({
-    key_id: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!,
-    key_secret: process.env.RAZORPAY_KEY_SECRET!,
-  })
-}
+const PLAN_PRICES: Record<string, number> = { starter: 399, growth: 699, pro: 999 }
 
 async function getAdminClient() {
   const cookieStore = await cookies()
@@ -30,6 +18,25 @@ async function getAdminClient() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
     { cookies: { getAll() { return cookieStore.getAll() }, setAll() {} } }
   )
+}
+
+async function razorpayRequest(endpoint: string, method = 'GET', body?: any) {
+  const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID!
+  const secret = process.env.RAZORPAY_KEY_SECRET!
+  const auth = Buffer.from(`${key}:${secret}`).toString('base64')
+  
+  const res = await fetch(`https://api.razorpay.com/v1/${endpoint}`, {
+    method,
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error?.description || data.error || 'Razorpay API error')
+  return data
 }
 
 export async function POST(req: NextRequest) {
@@ -44,42 +51,40 @@ export async function POST(req: NextRequest) {
     .eq('owner_id', user.id)
     .single()
 
-  if (!tenant) return NextResponse.json({ error: 'No tenant' }, { status: 403 })
+  if (!tenant) return NextResponse.json({ error: 'No tenant found' }, { status: 403 })
 
   const body = await req.json()
   const { action, plan } = body
 
   if (action === 'create_subscription') {
     const planId = PLAN_IDS[plan]
-    if (!planId) return NextResponse.json({ error: 'Invalid plan' }, { status: 400 })
+    if (!planId) return NextResponse.json({ error: 'Invalid plan selected' }, { status: 400 })
 
     try {
-      const razorpay = getRazorpay()
-
       // Cancel existing subscription if any
       if (tenant.razorpay_subscription_id) {
         try {
-          await razorpay.subscriptions.cancel(tenant.razorpay_subscription_id, false)
+          await razorpayRequest(`subscriptions/${tenant.razorpay_subscription_id}/cancel`, 'POST', { cancel_at_cycle_end: 0 })
         } catch (e) {
-          // Ignore if already cancelled
+          // Ignore — already cancelled or doesn't exist
         }
       }
 
-      // Create new subscription
-      const subscription = await razorpay.subscriptions.create({
+      // Create new subscription via Razorpay REST API
+      const subscription = await razorpayRequest('subscriptions', 'POST', {
         plan_id: planId,
         customer_notify: 1,
         quantity: 1,
-        total_count: 120, // 10 years max
+        total_count: 120,
         notes: {
           tenant_id: tenant.id,
           business_name: tenant.business_name,
           email: tenant.email,
           plan,
         },
-      } as any)
+      })
 
-      // Store subscription ID
+      // Store subscription ID in tenant
       await adminClient.from('tenants').update({
         razorpay_subscription_id: subscription.id,
         plan: plan,
@@ -97,21 +102,19 @@ export async function POST(req: NextRequest) {
         },
       })
     } catch (err: any) {
-      console.error('Razorpay subscription error:', err)
+      console.error('Razorpay subscription error:', err.message)
       return NextResponse.json({ error: err.message || 'Failed to create subscription' }, { status: 500 })
     }
   }
 
   if (action === 'cancel_subscription') {
     if (!tenant.razorpay_subscription_id) {
-      return NextResponse.json({ error: 'No active subscription' }, { status: 400 })
+      return NextResponse.json({ error: 'No active subscription found' }, { status: 400 })
     }
-
     try {
-      const razorpay = getRazorpay()
-      await razorpay.subscriptions.cancel(tenant.razorpay_subscription_id, false) // cancel at end of period
+      await razorpayRequest(`subscriptions/${tenant.razorpay_subscription_id}/cancel`, 'POST', { cancel_at_cycle_end: 1 })
       await adminClient.from('tenants').update({ plan_status: 'cancelled' }).eq('id', tenant.id)
-      return NextResponse.json({ success: true, message: 'Subscription cancelled. You can use the app until your current period ends.' })
+      return NextResponse.json({ success: true, message: 'Subscription cancelled. Access continues until your current period ends.' })
     } catch (err: any) {
       return NextResponse.json({ error: err.message }, { status: 500 })
     }

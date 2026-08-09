@@ -14,6 +14,8 @@ export default function SuperAdminDashboard() {
   const [form, setForm] = useState<any>({})
   const [extendModal, setExtendModal] = useState<any>(null)
   const [extendForm, setExtendForm] = useState({ type: 'payment', days: 30, payment_ref: '', amount: 0, reason: '' })
+  const [deleteModal, setDeleteModal] = useState<any>(null)
+  const [deleteReason, setDeleteReason] = useState('')
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState({ msg: '', type: '' })
   const [search, setSearch] = useState('')
@@ -97,6 +99,36 @@ export default function SuperAdminDashboard() {
     if (r.error) { showToast('Error: ' + r.error, 'error'); return }
     showToast(`Extended ${extendForm.days} days! New expiry: ${new Date(r.new_expiry).toLocaleDateString('en-IN')}`)
     setExtendModal(null)
+    load()
+  }
+
+  const openDelete = (t: any) => {
+    setDeleteModal(t)
+    setDeleteReason('')
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteReason.trim()) { showToast('Deletion reason is mandatory', 'error'); return }
+    setSaving(true)
+    const r = await fetch('/api/admin/subscription', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'soft_delete', tenant_id: deleteModal.id, reason: deleteReason }),
+    }).then(r => r.json())
+    setSaving(false)
+    if (r.error) { showToast('Error: ' + r.error, 'error'); return }
+    showToast('Account soft deleted')
+    setDeleteModal(null)
+    load()
+  }
+
+  const restoreAccount = async (t: any) => {
+    if (!confirm(`Restore ${t.business_name}?`)) return
+    const r = await fetch('/api/admin/subscription', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'restore', tenant_id: t.id, reason: 'Admin restore' }),
+    }).then(r => r.json())
+    if (r.error) { showToast('Error: ' + r.error, 'error'); return }
+    showToast('Account restored!')
     load()
   }
 
@@ -208,6 +240,10 @@ export default function SuperAdminDashboard() {
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <button onClick={() => openEdit(t)} style={{ fontSize: 11, color: '#3b82f6', background: 'rgba(59,130,246,0.1)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>Edit</button>
                           <button onClick={() => openExtend(t)} style={{ fontSize: 11, color: '#22c55e', background: 'rgba(34,197,94,0.1)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>Extend</button>
+                          {t.deleted_at
+                            ? <button onClick={() => restoreAccount(t)} style={{ fontSize: 11, color: '#a78bfa', background: 'rgba(167,139,250,0.1)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>Restore</button>
+                            : <button onClick={() => openDelete(t)} style={{ fontSize: 11, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>Delete</button>
+                          }
                         </div>
                       </td>
                     </tr>
@@ -326,6 +362,38 @@ export default function SuperAdminDashboard() {
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={() => setExtendModal(null)} style={btnSecondary}>Cancel</button>
               <button onClick={confirmExtend} disabled={saving} style={btnPrimary}>{saving ? 'Processing...' : 'Confirm Extension'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+      {/* Delete Modal */}
+      {deleteModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }} onClick={() => setDeleteModal(null)}>
+          <div style={{ background: '#1e293b', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 20, width: '100%', maxWidth: 440, padding: 32 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🗑️</div>
+            <h3 style={{ color: 'white', fontWeight: 600, fontSize: 17, marginBottom: 4 }}>Soft Delete Account</h3>
+            <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 4 }}>{deleteModal.business_name} · {deleteModal.email}</p>
+            <p style={{ color: '#ef4444', fontSize: 12, marginBottom: 20 }}>⚠️ Account will be deactivated. Data is preserved. Can be restored later.</p>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, color: '#94a3b8', marginBottom: 6 }}>Reason for Deletion <span style={{ color: '#ef4444' }}>* Required</span></label>
+              <textarea
+                value={deleteReason}
+                onChange={e => setDeleteReason(e.target.value)}
+                style={{ width: '100%', padding: '10px 14px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 14, color: 'white', outline: 'none', fontFamily: 'inherit', resize: 'none', boxSizing: 'border-box' as const }}
+                rows={3}
+                placeholder="e.g. User requested account closure, fraud detected, duplicate account, TOS violation..."
+                autoFocus
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setDeleteModal(null)} style={{ padding: '9px 20px', background: 'rgba(255,255,255,0.06)', color: '#f1f5f9', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button onClick={confirmDelete} disabled={saving || !deleteReason.trim()} style={{ padding: '9px 20px', background: saving || !deleteReason.trim() ? '#7f1d1d' : '#ef4444', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: !deleteReason.trim() ? 0.5 : 1 }}>
+                {saving ? 'Deleting...' : 'Confirm Delete'}
+              </button>
             </div>
           </div>
         </div>

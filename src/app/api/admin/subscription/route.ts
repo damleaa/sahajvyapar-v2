@@ -15,7 +15,7 @@ export async function GET() {
   const supabase = await getAdminClient()
   const { data } = await supabase
     .from('tenants')
-    .select('id, business_name, email, plan, plan_status, plan_expires_at, created_at, is_active, payment_id, notes')
+    .select('id, business_name, email, plan, plan_status, plan_expires_at, created_at, is_active, payment_id, notes, razorpay_subscription_id, deleted_at, deletion_reason')
     .order('created_at', { ascending: false })
   return NextResponse.json(data || [])
 }
@@ -45,16 +45,16 @@ export async function POST(req: NextRequest) {
   if (action === 'extend') {
     const { payment_id: ext_payment_id, notes: ext_notes } = body
 
-    // ENFORCE: payment reference OR complimentary reason required — never free extension
+    // ENFORCE: payment reference OR complimentary reason required
     if (!ext_payment_id || !ext_payment_id.trim()) {
       return NextResponse.json({
-        error: 'Extension requires a payment reference or complimentary reason. Free extensions are not allowed.'
+        error: 'Payment reference or complimentary code is required. Free extensions are not allowed.'
       }, { status: 400 })
     }
 
     if (!ext_notes || !ext_notes.trim()) {
       return NextResponse.json({
-        error: 'Extension notes are required. Document the reason for this extension.'
+        error: 'Notes are required. Document the reason for this extension.'
       }, { status: 400 })
     }
 
@@ -72,9 +72,43 @@ export async function POST(req: NextRequest) {
       grace_period_ends_at: null,
       suspended_at: null,
       suspension_reason: null,
+      deleted_at: null,
+      deletion_reason: null,
     }).eq('id', tenant_id)
 
     return NextResponse.json({ success: true, new_expiry: base.toISOString() })
+  }
+
+  // Soft delete with mandatory reason
+  if (action === 'soft_delete') {
+    const { reason } = body
+    if (!reason || !reason.trim()) {
+      return NextResponse.json({ error: 'Deletion reason is mandatory.' }, { status: 400 })
+    }
+
+    await supabase.from('tenants').update({
+      is_active: false,
+      plan_status: 'cancelled',
+      deleted_at: new Date().toISOString(),
+      deletion_reason: reason.trim(),
+      suspension_reason: `Deleted by admin: ${reason.trim()}`,
+    }).eq('id', tenant_id)
+
+    return NextResponse.json({ success: true })
+  }
+
+  // Restore soft-deleted account
+  if (action === 'restore') {
+    const { reason } = body
+    await supabase.from('tenants').update({
+      is_active: true,
+      deleted_at: null,
+      deletion_reason: null,
+      suspended_at: null,
+      suspension_reason: null,
+      notes: `Restored by admin: ${reason || 'No reason provided'}`,
+    }).eq('id', tenant_id)
+    return NextResponse.json({ success: true })
   }
 
   if (action === 'suspend') {
