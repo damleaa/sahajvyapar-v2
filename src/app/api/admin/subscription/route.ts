@@ -43,11 +43,37 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === 'extend') {
+    const { payment_id: ext_payment_id, notes: ext_notes } = body
+
+    // ENFORCE: payment reference OR complimentary reason required — never free extension
+    if (!ext_payment_id || !ext_payment_id.trim()) {
+      return NextResponse.json({
+        error: 'Extension requires a payment reference or complimentary reason. Free extensions are not allowed.'
+      }, { status: 400 })
+    }
+
+    if (!ext_notes || !ext_notes.trim()) {
+      return NextResponse.json({
+        error: 'Extension notes are required. Document the reason for this extension.'
+      }, { status: 400 })
+    }
+
     const { data: tenant } = await supabase.from('tenants').select('plan_expires_at').eq('id', tenant_id).single()
     const currentExpiry = new Date(tenant?.plan_expires_at || Date.now())
     const base = currentExpiry > new Date() ? currentExpiry : new Date()
     base.setDate(base.getDate() + Number(days || 30))
-    await supabase.from('tenants').update({ plan_expires_at: base.toISOString(), plan_status: 'active' }).eq('id', tenant_id)
+
+    await supabase.from('tenants').update({
+      plan_expires_at: base.toISOString(),
+      plan_status: 'active',
+      is_active: true,
+      payment_id: ext_payment_id,
+      notes: ext_notes,
+      grace_period_ends_at: null,
+      suspended_at: null,
+      suspension_reason: null,
+    }).eq('id', tenant_id)
+
     return NextResponse.json({ success: true, new_expiry: base.toISOString() })
   }
 

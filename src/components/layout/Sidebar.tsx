@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck,
-  ClipboardList, RotateCcw, BarChart3, Store, Settings, LogOut, Sparkles, ReceiptIndianRupee, Shield
+  ClipboardList, RotateCcw, BarChart3, Store, Settings, LogOut, Sparkles, ReceiptIndianRupee
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { canAccess, type PlanType } from '@/types'
@@ -26,7 +26,6 @@ const NAV_ITEMS = [
   { href: '/dashboard/reports', label: 'Reports', icon: BarChart3, plan: null },
   { href: '/dashboard/insights', label: 'Sahaj Insights', icon: Sparkles, plan: 'exhibitions' as keyof typeof import('@/types').PLAN_FEATURES.pro },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings, plan: null },
-  { href: '/dashboard/admin', label: 'Admin', icon: Shield, plan: null },
 ]
 
 export default function Sidebar({ tenant }: SidebarProps) {
