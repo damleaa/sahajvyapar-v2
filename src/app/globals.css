@@ -62,3 +62,28 @@
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+
+/* ── Mobile responsive dashboard ─────────────────────────── */
+@media (max-width: 768px) {
+  .sidebar-desktop { display: none !important; }
+  .mobile-nav { display: flex !important; }
+  table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .hide-mobile { display: none !important; }
+  .grid-mobile-1 { grid-template-columns: 1fr !important; }
+}
+
+@media (min-width: 769px) {
+  .mobile-nav { display: none !important; }
+  .sidebar-desktop { display: flex !important; }
+}
+
+/* ── Badge variants ───────────────────────────────────────── */
+.badge-blue { @apply bg-blue-500/15 text-blue-400; }
+.badge-purple { @apply bg-purple-500/15 text-purple-400; }
+.badge-slate { @apply bg-slate-500/15 text-slate-400; }
+
+/* ── Print styles for invoice ─────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+  body { background: white; color: black; }
+}

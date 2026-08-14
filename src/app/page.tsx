@@ -236,6 +236,13 @@ export default function HomePage() {
               <div style={{ marginBottom: 10 }}><a href="mailto:support@sahajvyapar.in" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'none' }}>support@sahajvyapar.in</a></div>
               <div><a href="https://demo.sahajvyapar.in" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'none' }}>v1 Demo App</a></div>
             </div>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'rgba(255,255,255,0.3)', marginBottom: 14 }}>Legal</div>
+              {['/privacy-policy|Privacy Policy', '/terms-of-service|Terms of Service', '/refund-policy|Refund Policy', '/contact|Contact Us'].map(item => {
+                const [href, label] = item.split('|')
+                return <div key={href} style={{ marginBottom: 10 }}><a href={href} style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'none' }}>{label}</a></div>
+              })}
+            </div>
           </div>
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: 24, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
             <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)' }}>© 2026 SahajVyapar. Sab rights reserved.</p>
