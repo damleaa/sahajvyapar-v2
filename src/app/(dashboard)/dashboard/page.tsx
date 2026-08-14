@@ -80,7 +80,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
         {statCards.map(card => (
           <div key={card.label} className="card p-5">
             <div className="flex items-center justify-between mb-3">
@@ -96,7 +96,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Recent sales + Low stock */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <div className="card">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800">
             <h3 className="text-white font-semibold text-sm">Recent Sales</h3>
