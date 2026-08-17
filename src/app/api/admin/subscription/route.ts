@@ -121,5 +121,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
+  // Admin-triggered password reset email
+  if (action === 'reset_password') {
+    const { email } = body
+    if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+
+    // Use Supabase Admin API to send reset email
+    const { error } = await supabase.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: {
+        redirectTo: 'https://sahajvyapar.in/reset-password',
+      }
+    })
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ success: true, message: `Password reset email sent to ${email}` })
+  }
+
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
 }

@@ -133,6 +133,17 @@ export default function SuperAdminDashboard() {
     URL.revokeObjectURL(url)
   }
 
+  const resetPassword = async (t: any) => {
+    if (!confirm(`Send password reset email to ${t.email}?`)) return
+    const r = await fetch('/api/admin/subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'reset_password', tenant_id: t.id, email: t.email }),
+    }).then(r => r.json())
+    if (r.error) { showToast('Error: ' + r.error, 'error'); return }
+    showToast(`Reset email sent to ${t.email}`)
+  }
+
   const filtered = tenants.filter(t => {
     if (filters.search && !t.business_name?.toLowerCase().includes(filters.search.toLowerCase()) && !t.email?.toLowerCase().includes(filters.search.toLowerCase())) return false
     if (filters.plan && t.plan !== filters.plan) return false
@@ -322,6 +333,7 @@ export default function SuperAdminDashboard() {
                             : <button onClick={() => { setDeleteModal(t); setDeleteReason('') }} style={{ fontSize: 10, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Delete</button>
                           }
                           <button onClick={() => exportTenantData(t)} style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Export</button>
+                          <button onClick={() => resetPassword(t)} style={{ fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Reset PW</button>
                         </div>
                       </td>
                     </tr>
