@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -14,25 +15,16 @@ export default function LoginPage() {
     setLoading(true)
     setError('')
 
-    const response = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
+    const supabase = createClient()
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
 
-    const result = await response.json()
-
-    if (!response.ok) {
-      setError(result.error || 'Sign in failed')
+    if (error) {
+      setError(error.message)
       setLoading(false)
       return
     }
 
-    // The login route writes the Supabase session cookies before navigation.
-    window.location.assign('/dashboard')
-  }
-    setEmail(demos[type])
-    setPassword('Demo@1234')
+    window.location.href = '/dashboard'
   }
 
   return (
@@ -42,6 +34,7 @@ export default function LoginPage() {
           <div className="inline-flex items-center gap-2.5 mb-3">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">S</div>
             <span className="text-white text-xl font-bold">SahajVyapar</span>
+            <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded">BETA</span>
           </div>
           <p className="text-slate-400 text-sm">Inventory & Business Management</p>
         </div>
@@ -66,6 +59,7 @@ export default function LoginPage() {
                 className="input-base"
                 placeholder="you@business.com"
                 required
+                autoComplete="email"
               />
             </div>
             <div>
@@ -77,10 +71,14 @@ export default function LoginPage() {
                 className="input-base"
                 placeholder="••••••••"
                 required
+                autoComplete="current-password"
               />
             </div>
-            <button type="submit" disabled={loading}
-              className="btn-primary w-full py-3 mt-2">
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary w-full py-3 mt-2"
+            >
               {loading ? 'Signing in...' : 'Sign In →'}
             </button>
           </form>
@@ -91,11 +89,24 @@ export default function LoginPage() {
             <div className="flex-1 h-px bg-slate-800" />
           </div>
 
-          <Link href="/register"
-            className="flex items-center justify-center gap-2 w-full py-2.5 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-all">
+          <Link
+            href="/register"
+            className="flex items-center justify-center gap-2 w-full py-2.5 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-all"
+          >
             New business? Start 7-day free trial →
           </Link>
+
+          <div className="mt-5 p-3 bg-amber-500/8 border border-amber-500/15 rounded-xl">
+            <p className="text-amber-400/80 text-xs text-center">
+              🔬 Beta version · Test environment · Dummy payments only
+            </p>
           </div>
+        </div>
+
+        <div className="mt-4 flex justify-center gap-4">
+          <Link href="/privacy-policy" className="text-slate-600 text-xs hover:text-slate-400">Privacy Policy</Link>
+          <Link href="/terms-of-service" className="text-slate-600 text-xs hover:text-slate-400">Terms</Link>
+          <Link href="/contact" className="text-slate-600 text-xs hover:text-slate-400">Contact</Link>
         </div>
       </div>
     </div>
