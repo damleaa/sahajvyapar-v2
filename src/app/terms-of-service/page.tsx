@@ -128,7 +128,7 @@ export default function TermsOfService() {
         <Section title="14. Contact">
           <P>For any queries regarding these Terms, contact us at:</P>
           <UL items={[
-            'Email: legal@sahajvyapar.in',
+            'Email: support@sahajvyapar.in',
             'Company: Emotiquant Technologies OPC Pvt. Ltd.',
             'Address: Airoli, Navi Mumbai, Maharashtra - 400708',
           ]} />

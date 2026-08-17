@@ -112,7 +112,7 @@ export default function PrivacyPolicy() {
           <h2>10. Contact Us</h2>
           <p>For privacy-related queries, contact our Grievance Officer:</p>
           <ul>
-            <li>Email: <a href="mailto:privacy@sahajvyapar.in">privacy@sahajvyapar.in</a></li>
+            <li>Email: <a href="mailto:support@sahajvyapar.in">support@sahajvyapar.in</a></li>
             <li>Company: Emotiquant Technologies OPC Pvt. Ltd.</li>
             <li>Address: Airoli, Navi Mumbai, Maharashtra, India</li>
             <li>Response time: Within 30 days as per IT Act requirements</li>

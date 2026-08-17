@@ -111,7 +111,7 @@ export default function RefundPolicy() {
         {ul([
           'Email: support@sahajvyapar.in',
           'Response time: Within 2 business days',
-          'Escalation: grievance@sahajvyapar.in (for unresolved issues within 7 days)',
+          'Escalation: support@sahajvyapar.in (for unresolved issues within 7 days)',
         ])}
         {p('This policy is governed by Indian consumer protection laws including the Consumer Protection Act, 2019.')}
       </div>
