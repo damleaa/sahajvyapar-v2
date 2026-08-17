@@ -17,6 +17,9 @@ export default function SuperAdminDashboard() {
   const [deleteModal, setDeleteModal] = useState<any>(null)
   const [deleteReason, setDeleteReason] = useState('')
   const [saving, setSaving] = useState(false)
+  const [exportModal, setExportModal] = useState<any>(null)
+  const [exportData, setExportData] = useState<any>(null)
+  const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState({ msg: '', type: '' })
   const [filters, setFilters] = useState({ search: '', plan: '', status: '', from: '', to: '' })
 
@@ -92,6 +95,44 @@ export default function SuperAdminDashboard() {
   }
 
   // Apply filters
+  const exportTenantData = async (t: any) => {
+    setExportModal(t)
+    setExportData(null)
+    setExporting(true)
+    try {
+      const r = await fetch('/api/admin/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': process.env.NEXT_PUBLIC_SUPERADMIN_KEY || 'SV@SuperAdmin2026' },
+        body: JSON.stringify({ tenant_id: t.id }),
+      }).then(r => r.json())
+      setExportData(r)
+    } catch (err) {
+      showToast('Export failed', 'error')
+    }
+    setExporting(false)
+  }
+
+  const downloadCSV = (name: string, csv: string) => {
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${name}_${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const downloadJSON = () => {
+    if (!exportData) return
+    const blob = new Blob([JSON.stringify(exportData.data, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${exportModal.business_name}_full_export_${new Date().toISOString().split('T')[0]}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const filtered = tenants.filter(t => {
     if (filters.search && !t.business_name?.toLowerCase().includes(filters.search.toLowerCase()) && !t.email?.toLowerCase().includes(filters.search.toLowerCase())) return false
     if (filters.plan && t.plan !== filters.plan) return false
@@ -280,6 +321,7 @@ export default function SuperAdminDashboard() {
                             ? <button onClick={() => restoreAccount(t)} style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Restore</button>
                             : <button onClick={() => { setDeleteModal(t); setDeleteReason('') }} style={{ fontSize: 10, color: '#ef4444', background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Delete</button>
                           }
+                          <button onClick={() => exportTenantData(t)} style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Export</button>
                         </div>
                       </td>
                     </tr>
@@ -437,6 +479,71 @@ export default function SuperAdminDashboard() {
                 style={{ ...btnP, background: !deleteReason.trim() ? '#7f1d1d' : '#ef4444', opacity: !deleteReason.trim() ? 0.5 : 1 }}>
                 {saving ? 'Deleting...' : 'Confirm Delete'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {exportModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }} onClick={() => { setExportModal(null); setExportData(null) }}>
+          <div style={{ background: '#1e293b', border: '1px solid rgba(6,182,212,0.3)', borderRadius: 18, width: '100%', maxWidth: 520, padding: 28 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>📦</div>
+            <h3 style={{ color: 'white', fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Data Export</h3>
+            <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 20 }}>{exportModal.business_name} · {exportModal.email}</p>
+
+            {exporting ? (
+              <div style={{ textAlign: 'center', padding: '32px 0', color: '#64748b' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                <div style={{ fontSize: 14 }}>Fetching data...</div>
+              </div>
+            ) : exportData ? (
+              <div>
+                {/* Summary */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 20 }}>
+                  {[
+                    ['Products', exportData.data?.products?.length || 0, '#3b82f6'],
+                    ['Sales', exportData.data?.sales?.length || 0, '#22c55e'],
+                    ['Customers', exportData.data?.customers?.length || 0, '#f59e0b'],
+                    ['Expenses', exportData.data?.expenses?.length || 0, '#a78bfa'],
+                  ].map(([label, count, color]) => (
+                    <div key={label as string} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 20, fontWeight: 700, color: color as string }}>{count as number}</div>
+                      <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Download buttons */}
+                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Download as CSV</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+                  {[
+                    ['Products', 'products'],
+                    ['Sales', 'sales'],
+                    ['Customers', 'customers'],
+                    ['Expenses', 'expenses'],
+                  ].map(([label, key]) => (
+                    <button key={key} onClick={() => downloadCSV(`${exportModal.business_name}_${key}`, exportData.csv[key] || '')}
+                      disabled={!exportData.csv[key]}
+                      style={{ padding: '8px 12px', background: exportData.csv[key] ? 'rgba(6,182,212,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${exportData.csv[key] ? 'rgba(6,182,212,0.3)' : 'rgba(255,255,255,0.05)'}`, borderRadius: 8, color: exportData.csv[key] ? '#06b6d4' : '#475569', fontSize: 12, cursor: exportData.csv[key] ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
+                      ↓ {label} CSV
+                    </button>
+                  ))}
+                </div>
+                <button onClick={downloadJSON}
+                  style={{ width: '100%', padding: '10px', background: 'rgba(37,99,235,0.15)', border: '1px solid rgba(37,99,235,0.3)', borderRadius: 8, color: '#3b82f6', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ↓ Download Complete Export (JSON) — All Tables
+                </button>
+                <p style={{ color: '#475569', fontSize: 11, marginTop: 8, textAlign: 'center' }}>
+                  Exported at {new Date().toLocaleString('en-IN')} · Share securely with the user only
+                </p>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: '#ef4444' }}>Export failed. Try again.</div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <button onClick={() => { setExportModal(null); setExportData(null) }} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.06)', color: '#f1f5f9', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
             </div>
           </div>
         </div>

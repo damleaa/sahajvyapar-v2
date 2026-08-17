@@ -38,7 +38,7 @@ export default function HomePage() {
       <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(15,23,42,0.9)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '0 5%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64 }}>
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
           <div style={{ width: 36, height: 36, background: '#2563eb', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: 15 }}>S</div>
-          <span style={{ color: 'white', fontWeight: 700, fontSize: 17 }}>SahajVyapar</span>
+          <span style={{ color: 'white', fontWeight: 700, fontSize: 17 }}>SahajVyapar</span><span style={{ background: '#f59e0b', color: 'black', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 4, marginLeft: 6, letterSpacing: '0.03em' }}>BETA</span>
         </Link>
         <div className="nav-links" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <a href="#features" className="nav-link hide">Features</a>
@@ -201,15 +201,13 @@ export default function HomePage() {
             <Link href="/register" className="btn-primary">Free Trial Shuru Karein →</Link>
             <Link href="/login" className="btn-secondary">Login karein</Link>
           </div>
-          <div style={{ padding: 16, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12 }}>
-            <p style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>Demo accounts (password: Demo@1234)</p>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-              {[['Starter','starter@demo.sahajvyapar.in'],['Growth','growth@demo.sahajvyapar.in'],['Pro','pro@demo.sahajvyapar.in']].map(([plan,email]) => (
-                <div key={plan} style={{ background: 'rgba(37,99,235,0.1)', border: '1px solid rgba(37,99,235,0.2)', borderRadius: 8, padding: '6px 12px', fontSize: 12 }}>
-                  <span style={{ color: '#3b82f6', fontWeight: 600 }}>{plan}:</span> <span style={{ color: '#94a3b8' }}>{email}</span>
-                </div>
-              ))}
-            </div>
+          <div style={{ padding: '10px 16px', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 10, marginBottom: 12 }}>
+            <p style={{ fontSize: 12, color: '#fbbf24', margin: 0 }}>⚠️ <strong>Beta Notice:</strong> Payment gateway is in TEST mode. Do not enter real business data. This platform is for evaluation purposes only.</p>
+          </div>
+          <div style={{ padding: '10px 16px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10 }}>
+            <p style={{ fontSize: 12, color: '#64748b', margin: 0, textAlign: 'center' }}>
+              Want a guided demo? <a href="mailto:support@sahajvyapar.in" style={{ color: '#3b82f6', textDecoration: 'none' }}>Contact us</a> and we will walk you through.
+            </p>
           </div>
         </div>
       </section>

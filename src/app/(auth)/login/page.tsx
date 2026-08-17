@@ -31,13 +31,6 @@ export default function LoginPage() {
     // The login route writes the Supabase session cookies before navigation.
     window.location.assign('/dashboard')
   }
-
-  const fillDemo = (type: string) => {
-    const demos: Record<string, string> = {
-      starter: 'starter@demo.sahajvyapar.in',
-      growth: 'growth@demo.sahajvyapar.in',
-      pro: 'pro@demo.sahajvyapar.in',
-    }
     setEmail(demos[type])
     setPassword('Demo@1234')
   }
@@ -102,18 +95,6 @@ export default function LoginPage() {
             className="flex items-center justify-center gap-2 w-full py-2.5 border border-slate-700 rounded-lg text-sm text-slate-300 hover:bg-slate-800 transition-all">
             New business? Start 7-day free trial →
           </Link>
-
-          <div className="mt-5 p-3 bg-slate-800/50 rounded-lg">
-            <p className="text-slate-500 text-xs font-medium mb-2">Quick demo login:</p>
-            <div className="flex gap-2">
-              {['starter', 'growth', 'pro'].map(t => (
-                <button key={t} onClick={() => fillDemo(t)}
-                  className="flex-1 py-1.5 text-xs font-medium bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all capitalize">
-                  {t}
-                </button>
-              ))}
-            </div>
-            <p className="text-slate-600 text-xs mt-2 text-center">Click a tier then Sign In</p>
           </div>
         </div>
       </div>
