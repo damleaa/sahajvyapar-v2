@@ -232,7 +232,7 @@ export default function HomePage() {
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'rgba(255,255,255,0.3)', marginBottom: 14 }}>Support</div>
               <div style={{ marginBottom: 10 }}><a href="mailto:support@sahajvyapar.in" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'none' }}>support@sahajvyapar.in</a></div>
-              <div><a href="https://demo.sahajvyapar.in" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'none' }}>v1 Demo App</a></div>
+              <div><a href="/coming-soon" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', textDecoration: 'none' }}>Demo V1 App <span style={{ fontSize: 10, color: '#475569' }}>(coming soon)</span></a></div>
             </div>
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'rgba(255,255,255,0.3)', marginBottom: 14 }}>Legal</div>
