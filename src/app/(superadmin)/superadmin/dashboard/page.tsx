@@ -20,6 +20,8 @@ export default function SuperAdminDashboard() {
   const [exportModal, setExportModal] = useState<any>(null)
   const [exportData, setExportData] = useState<any>(null)
   const [exporting, setExporting] = useState(false)
+  const [setPwModal, setSetPwModal] = useState<any>(null)
+  const [customPw, setCustomPw] = useState('')
   const [toast, setToast] = useState({ msg: '', type: '' })
   const [filters, setFilters] = useState({ search: '', plan: '', status: '', from: '', to: '' })
 
@@ -37,7 +39,9 @@ export default function SuperAdminDashboard() {
 
   const load = async () => {
     setLoading(true)
-    const data = await fetch('/api/admin/subscription').then(r => r.json())
+    const data = await fetch('/api/admin/subscription', {
+      headers: { 'x-admin-key': 'SV@SuperAdmin2026' }
+    }).then(r => r.json())
     setTenants(Array.isArray(data) ? data : [])
     setLoading(false)
   }
@@ -45,7 +49,7 @@ export default function SuperAdminDashboard() {
   const save = async () => {
     setSaving(true)
     const r = await fetch('/api/admin/subscription', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': 'SV@SuperAdmin2026' },
       body: JSON.stringify({ action: 'update_subscription', tenant_id: selected.id, ...form }),
     }).then(r => r.json())
     setSaving(false)
@@ -59,7 +63,7 @@ export default function SuperAdminDashboard() {
     if (extendForm.type === 'complimentary' && !extendForm.reason.trim()) { showToast('Reason required', 'error'); return }
     setSaving(true)
     const r = await fetch('/api/admin/subscription', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': 'SV@SuperAdmin2026' },
       body: JSON.stringify({
         action: 'extend', tenant_id: extendModal.id, days: extendForm.days,
         payment_id: extendForm.type === 'payment' ? extendForm.payment_ref : `COMP-${Date.now()}`,
@@ -76,7 +80,7 @@ export default function SuperAdminDashboard() {
     if (!deleteReason.trim()) { showToast('Reason required', 'error'); return }
     setSaving(true)
     const r = await fetch('/api/admin/subscription', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': 'SV@SuperAdmin2026' },
       body: JSON.stringify({ action: 'soft_delete', tenant_id: deleteModal.id, reason: deleteReason }),
     }).then(r => r.json())
     setSaving(false)
@@ -88,13 +92,12 @@ export default function SuperAdminDashboard() {
   const restoreAccount = async (t: any) => {
     if (!confirm(`Restore ${t.business_name}?`)) return
     await fetch('/api/admin/subscription', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-key': 'SV@SuperAdmin2026' },
       body: JSON.stringify({ action: 'restore', tenant_id: t.id, reason: 'Admin restore' }),
     })
     showToast('Restored!'); load()
   }
 
-  // Apply filters
   const exportTenantData = async (t: any) => {
     setExportModal(t)
     setExportData(null)
@@ -102,13 +105,11 @@ export default function SuperAdminDashboard() {
     try {
       const r = await fetch('/api/admin/export', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-admin-key': process.env.NEXT_PUBLIC_SUPERADMIN_KEY || 'SV@SuperAdmin2026' },
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': 'SV@SuperAdmin2026' },
         body: JSON.stringify({ tenant_id: t.id }),
       }).then(r => r.json())
       setExportData(r)
-    } catch (err) {
-      showToast('Export failed', 'error')
-    }
+    } catch { showToast('Export failed', 'error') }
     setExporting(false)
   }
 
@@ -116,10 +117,8 @@ export default function SuperAdminDashboard() {
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = `${name}_${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    a.href = url; a.download = `${name}_${new Date().toISOString().split('T')[0]}.csv`
+    a.click(); URL.revokeObjectURL(url)
   }
 
   const downloadJSON = () => {
@@ -127,21 +126,33 @@ export default function SuperAdminDashboard() {
     const blob = new Blob([JSON.stringify(exportData.data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
-    a.download = `${exportModal.business_name}_full_export_${new Date().toISOString().split('T')[0]}.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    a.href = url; a.download = `${exportModal.business_name}_full_export_${new Date().toISOString().split('T')[0]}.json`
+    a.click(); URL.revokeObjectURL(url)
   }
 
   const resetPassword = async (t: any) => {
     if (!confirm(`Send password reset email to ${t.email}?`)) return
     const r = await fetch('/api/admin/subscription', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': 'SV@SuperAdmin2026' },
       body: JSON.stringify({ action: 'reset_password', tenant_id: t.id, email: t.email }),
     }).then(r => r.json())
     if (r.error) { showToast('Error: ' + r.error, 'error'); return }
     showToast(`Reset email sent to ${t.email}`)
+  }
+
+  const setPassword = async () => {
+    if (!setPwModal) return
+    setSaving(true)
+    const r = await fetch('/api/admin/subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-key': 'SV@SuperAdmin2026' },
+      body: JSON.stringify({ action: 'set_password', tenant_id: setPwModal.id, new_password: customPw || 'Sahajvyapar@123' }),
+    }).then(r => r.json())
+    setSaving(false)
+    if (r.error) { showToast('Error: ' + r.error, 'error'); return }
+    showToast(r.message || 'Password updated!')
+    setSetPwModal(null); setCustomPw('')
   }
 
   const filtered = tenants.filter(t => {
@@ -179,7 +190,13 @@ export default function SuperAdminDashboard() {
           <span style={{ color: 'white', fontWeight: 700, fontSize: 15 }}>SahajVyapar Superadmin</span>
           <span style={{ color: '#64748b', fontSize: 12, marginLeft: 8 }}>v2.0</span>
         </div>
-        <button onClick={() => { sessionStorage.removeItem('sv_admin_auth'); router.push('/superadmin') }} style={{ color: '#94a3b8', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Logout →</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* Revenue link — NEW */}
+          <a href="/superadmin/revenue" style={{ padding: '6px 14px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, color: '#22c55e', fontSize: 12, fontWeight: 600, textDecoration: 'none' }}>
+            Revenue & Settlements →
+          </a>
+          <button onClick={() => { sessionStorage.removeItem('sv_admin_auth'); router.push('/superadmin') }} style={{ color: '#94a3b8', fontSize: 12, background: 'none', border: 'none', cursor: 'pointer' }}>Logout →</button>
+        </div>
       </div>
 
       <div style={{ padding: '24px 28px', maxWidth: 1300, margin: '0 auto' }}>
@@ -334,6 +351,8 @@ export default function SuperAdminDashboard() {
                           }
                           <button onClick={() => exportTenantData(t)} style={{ fontSize: 10, color: '#06b6d4', background: 'rgba(6,182,212,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Export</button>
                           <button onClick={() => resetPassword(t)} style={{ fontSize: 10, color: '#f59e0b', background: 'rgba(245,158,11,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Reset PW</button>
+                          {/* Set Password — NEW */}
+                          <button onClick={() => { setSetPwModal(t); setCustomPw('') }} style={{ fontSize: 10, color: '#a78bfa', background: 'rgba(167,139,250,0.1)', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer' }}>Set PW</button>
                         </div>
                       </td>
                     </tr>
@@ -412,7 +431,6 @@ export default function SuperAdminDashboard() {
           <div style={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 18, width: '100%', maxWidth: 480, padding: 28 }} onClick={e => e.stopPropagation()}>
             <h3 style={{ color: 'white', fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Extend Subscription</h3>
             <p style={{ color: '#64748b', fontSize: 12, marginBottom: 16 }}>{extendModal.business_name} · {extendModal.plan} plan · Rs.{PLAN_PRICES[extendModal.plan]}/mo</p>
-
             <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: 3, marginBottom: 16 }}>
               {[{ v: 'payment', l: '💳 With Payment' }, { v: 'complimentary', l: '🎁 Complimentary' }].map(opt => (
                 <button key={opt.v} onClick={() => setExtendForm(f => ({ ...f, type: opt.v }))}
@@ -421,7 +439,6 @@ export default function SuperAdminDashboard() {
                 </button>
               ))}
             </div>
-
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               <div>
                 <label style={{ display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 6 }}>Duration</label>
@@ -434,7 +451,6 @@ export default function SuperAdminDashboard() {
                   ))}
                 </div>
               </div>
-
               {extendForm.type === 'payment' ? (
                 <>
                   <div><label style={{ display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 5 }}>Amount Received (Rs.) *</label>
@@ -449,7 +465,6 @@ export default function SuperAdminDashboard() {
                   <textarea value={extendForm.reason} onChange={e => setExtendForm(f => ({ ...f, reason: e.target.value }))} style={{ ...inp, resize: 'none' }} rows={2} placeholder="Support case, partnership, referral reward, bug compensation..." />
                 </div>
               )}
-
               <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 8, padding: 12, fontSize: 12 }}>
                 {[
                   ['Duration', `${extendForm.days} days`],
@@ -462,7 +477,6 @@ export default function SuperAdminDashboard() {
                 ))}
               </div>
             </div>
-
             <div style={{ display: 'flex', gap: 10, marginTop: 18, justifyContent: 'flex-end' }}>
               <button onClick={() => setExtendModal(null)} style={btnS}>Cancel</button>
               <button onClick={confirmExtend} disabled={saving} style={btnP}>{saving ? 'Processing...' : 'Confirm Extension'}</button>
@@ -503,7 +517,6 @@ export default function SuperAdminDashboard() {
             <div style={{ fontSize: 28, marginBottom: 10 }}>📦</div>
             <h3 style={{ color: 'white', fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Data Export</h3>
             <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 20 }}>{exportModal.business_name} · {exportModal.email}</p>
-
             {exporting ? (
               <div style={{ textAlign: 'center', padding: '32px 0', color: '#64748b' }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
@@ -511,51 +524,67 @@ export default function SuperAdminDashboard() {
               </div>
             ) : exportData ? (
               <div>
-                {/* Summary */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 20 }}>
-                  {[
-                    ['Products', exportData.data?.products?.length || 0, '#3b82f6'],
-                    ['Sales', exportData.data?.sales?.length || 0, '#22c55e'],
-                    ['Customers', exportData.data?.customers?.length || 0, '#f59e0b'],
-                    ['Expenses', exportData.data?.expenses?.length || 0, '#a78bfa'],
-                  ].map(([label, count, color]) => (
+                  {[['Products', exportData.data?.products?.length || 0, '#3b82f6'], ['Sales', exportData.data?.sales?.length || 0, '#22c55e'], ['Customers', exportData.data?.customers?.length || 0, '#f59e0b'], ['Expenses', exportData.data?.expenses?.length || 0, '#a78bfa']].map(([label, count, color]) => (
                     <div key={label as string} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
                       <div style={{ fontSize: 20, fontWeight: 700, color: color as string }}>{count as number}</div>
                       <div style={{ fontSize: 10, color: '#64748b', marginTop: 2 }}>{label}</div>
                     </div>
                   ))}
                 </div>
-
-                {/* Download buttons */}
                 <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Download as CSV</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
-                  {[
-                    ['Products', 'products'],
-                    ['Sales', 'sales'],
-                    ['Customers', 'customers'],
-                    ['Expenses', 'expenses'],
-                  ].map(([label, key]) => (
-                    <button key={key} onClick={() => downloadCSV(`${exportModal.business_name}_${key}`, exportData.csv[key] || '')}
-                      disabled={!exportData.csv[key]}
+                  {[['Products', 'products'], ['Sales', 'sales'], ['Customers', 'customers'], ['Expenses', 'expenses']].map(([label, key]) => (
+                    <button key={key} onClick={() => downloadCSV(`${exportModal.business_name}_${key}`, exportData.csv[key] || '')} disabled={!exportData.csv[key]}
                       style={{ padding: '8px 12px', background: exportData.csv[key] ? 'rgba(6,182,212,0.1)' : 'rgba(255,255,255,0.03)', border: `1px solid ${exportData.csv[key] ? 'rgba(6,182,212,0.3)' : 'rgba(255,255,255,0.05)'}`, borderRadius: 8, color: exportData.csv[key] ? '#06b6d4' : '#475569', fontSize: 12, cursor: exportData.csv[key] ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
                       ↓ {label} CSV
                     </button>
                   ))}
                 </div>
-                <button onClick={downloadJSON}
-                  style={{ width: '100%', padding: '10px', background: 'rgba(37,99,235,0.15)', border: '1px solid rgba(37,99,235,0.3)', borderRadius: 8, color: '#3b82f6', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                <button onClick={downloadJSON} style={{ width: '100%', padding: '10px', background: 'rgba(37,99,235,0.15)', border: '1px solid rgba(37,99,235,0.3)', borderRadius: 8, color: '#3b82f6', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                   ↓ Download Complete Export (JSON) — All Tables
                 </button>
-                <p style={{ color: '#475569', fontSize: 11, marginTop: 8, textAlign: 'center' }}>
-                  Exported at {new Date().toLocaleString('en-IN')} · Share securely with the user only
-                </p>
+                <p style={{ color: '#475569', fontSize: 11, marginTop: 8, textAlign: 'center' }}>Exported at {new Date().toLocaleString('en-IN')} · Share securely with the user only</p>
               </div>
             ) : (
               <div style={{ textAlign: 'center', padding: '20px 0', color: '#ef4444' }}>Export failed. Try again.</div>
             )}
-
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
               <button onClick={() => { setExportModal(null); setExportData(null) }} style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.06)', color: '#f1f5f9', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 8, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Set Password Modal — NEW */}
+      {setPwModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 16 }} onClick={() => setSetPwModal(null)}>
+          <div style={{ background: '#1e293b', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 18, width: '100%', maxWidth: 420, padding: 28 }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>🔑</div>
+            <h3 style={{ color: 'white', fontWeight: 600, fontSize: 16, marginBottom: 4 }}>Set Password</h3>
+            <p style={{ color: '#94a3b8', fontSize: 12, marginBottom: 20 }}>{setPwModal.business_name} · {setPwModal.email}</p>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 11, color: '#94a3b8', marginBottom: 5 }}>New Password (leave blank for default)</label>
+              <input
+                value={customPw}
+                onChange={e => setCustomPw(e.target.value)}
+                style={inp}
+                placeholder="Sahajvyapar@123 (default)"
+                autoFocus
+              />
+              <div style={{ fontSize: 11, color: '#475569', marginTop: 6 }}>
+                Default password: <span style={{ color: '#a78bfa', fontFamily: 'monospace' }}>Sahajvyapar@123</span>
+              </div>
+            </div>
+            <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: 8, padding: '10px 12px', marginBottom: 20 }}>
+              <div style={{ fontSize: 11, color: '#f59e0b' }}>⚠️ This will immediately change the user's password. Ask them to change it after login.</div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setSetPwModal(null)} style={btnS}>Cancel</button>
+              <button onClick={setPassword} disabled={saving}
+                style={{ ...btnP, background: '#7c3aed' }}>
+                {saving ? 'Setting...' : 'Set Password'}
+              </button>
             </div>
           </div>
         </div>

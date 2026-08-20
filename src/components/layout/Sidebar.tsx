@@ -28,6 +28,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/reports', label: 'Reports', icon: BarChart3, plan: null },
   { href: '/dashboard/insights', label: 'Sahaj Insights', icon: Sparkles, plan: 'exhibitions' as keyof typeof import('@/types').PLAN_FEATURES.pro },
   { href: '/dashboard/settings', label: 'Settings', icon: Settings, plan: null },
+  { href: '/dashboard/payments', label: 'Payments', icon: CreditCard, plan: null },
 ]
 
 // Bottom nav items for mobile (most used)
