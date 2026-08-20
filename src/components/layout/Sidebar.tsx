@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 import {
   LayoutDashboard, Package, ShoppingCart, Users, Truck,
   ClipboardList, RotateCcw, BarChart3, Store, Settings, LogOut,
-  Sparkles, ReceiptIndianRupee, Menu, X
+  Sparkles, ReceiptIndianRupee, Menu, X,CreditCard
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { canAccess, type PlanType } from '@/types'
