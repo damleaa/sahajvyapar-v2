@@ -3,15 +3,19 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 
-function calcGST(amount: number, gstRate: number) {
-  const gstAmount = amount * gstRate / 100
-  return { cgst: gstAmount / 2, sgst: gstAmount / 2, total: gstAmount }
+// ── Tax Logic ─────────────────────────────────────────────────────
+// GST applies on taxable value AFTER discount
+// If sale has discount, it is distributed proportionally across items
+// Then GST is calculated on each item's post-discount taxable value
+
+function calcItemGST(taxableAmount: number, gstRate: number) {
+  const total = taxableAmount * gstRate / 100
+  return { cgst: total / 2, sgst: total / 2, total }
 }
 
 function numToWords(num: number): string {
-  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen']
-  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen']
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety']
   if (num === 0) return 'Zero'
   const convert = (n: number): string => {
     if (n < 20) return ones[n]
@@ -28,8 +32,7 @@ function numToWords(num: number): string {
   return result + ' Only'
 }
 
-const fm = (n: number) => Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })
-const s = (n: number) => `Rs.${fm(n)}`
+const fm = (n: number) => `Rs.${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
 
 export default function InvoicePage({ params }: { params: { id: string } }) {
   const [data, setData] = useState<any>(null)
@@ -46,7 +49,7 @@ export default function InvoicePage({ params }: { params: { id: string } }) {
   const whatsappShare = () => {
     if (!data) return
     const url = window.location.href
-    const msg = `Invoice: ${data.sale.invoice_number}\nAmount: Rs.${fm(data.sale.final_amount)}\nThank you for your business!\n\n${url}`
+    const msg = `Invoice: ${data.sale.invoice_number}\nAmount: ${fm(data.sale.final_amount)}\nThank you for your business!\n\n${url}`
     window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
   }
 
@@ -59,38 +62,61 @@ export default function InvoicePage({ params }: { params: { id: string } }) {
   if (error || !data) return (
     <div style={{ minHeight: '100vh', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
       <div style={{ color: '#ef4444' }}>{error || 'Invoice not found'}</div>
-      <Link href="/dashboard/sales" style={{ color: '#3b82f6' }}>Back to Sales</Link>
+      <Link href="/dashboard/sales" style={{ color: '#3b82f6' }}>&larr; Back to Sales</Link>
     </div>
   )
 
   const { sale, profile, tenant } = data
   const items: any[] = sale.sale_items || []
 
-  const hsnMap: Record<string, any> = {}
-  items.forEach((item: any) => {
-    const hsn = item.hsn_code || 'N/A'
-    const gst = calcGST(Number(item.total_price), Number(item.gst_rate) || 0)
-    if (!hsnMap[hsn]) hsnMap[hsn] = { hsn, taxable: 0, rate: Number(item.gst_rate) || 0, cgst: 0, sgst: 0, total: 0 }
-    hsnMap[hsn].taxable += Number(item.total_price)
-    hsnMap[hsn].cgst += gst.cgst
-    hsnMap[hsn].sgst += gst.sgst
-    hsnMap[hsn].total += gst.total
-  })
-
-  const hsnRows = Object.values(hsnMap)
-  const subtotal = items.reduce((acc: number, i: any) => acc + Number(i.total_price), 0)
-  const totalCGST = hsnRows.reduce((acc: number, h: any) => acc + h.cgst, 0)
-  const totalSGST = hsnRows.reduce((acc: number, h: any) => acc + h.sgst, 0)
+  // ── Tax Calculation (GST on post-discount taxable amount) ──────
+  const rawSubtotal = items.reduce((s: number, i: any) => s + Number(i.total_price), 0)
   const discount = Number(sale.discount_amount) || 0
   const grandTotal = Number(sale.final_amount)
 
+  // Discount ratio to distribute proportionally
+  const discountRatio = rawSubtotal > 0 ? discount / rawSubtotal : 0
+
+  // Per-item calculations with discount applied
+  const itemCalcs = items.map((item: any) => {
+    const lineTotal = Number(item.total_price)
+    const lineDiscount = lineTotal * discountRatio
+    const taxableAmt = lineTotal - lineDiscount  // GST base = post-discount amount
+    const gstRate = Number(item.gst_rate) || 0
+    const gst = calcItemGST(taxableAmt, gstRate)
+    return { ...item, lineTotal, lineDiscount, taxableAmt, gstRate, gst }
+  })
+
+  // HSN-wise summary
+  const hsnMap: Record<string, any> = {}
+  itemCalcs.forEach((item: any) => {
+    const hsn = item.hsn_code || 'N/A'
+    if (!hsnMap[hsn]) hsnMap[hsn] = { hsn, taxable: 0, rate: item.gstRate, cgst: 0, sgst: 0, total: 0 }
+    hsnMap[hsn].taxable += item.taxableAmt
+    hsnMap[hsn].cgst += item.gst.cgst
+    hsnMap[hsn].sgst += item.gst.sgst
+    hsnMap[hsn].total += item.gst.total
+  })
+  const hsnRows = Object.values(hsnMap)
+
+  const totalTaxable = itemCalcs.reduce((s: number, i: any) => s + i.taxableAmt, 0)
+  const totalCGST = hsnRows.reduce((s: number, h: any) => s + h.cgst, 0)
+  const totalSGST = hsnRows.reduce((s: number, h: any) => s + h.sgst, 0)
+  const totalGST = totalCGST + totalSGST
+
+  // Verify: taxable + GST should = grandTotal
+  // (grandTotal = final_amount from DB = subtotal - discount, without GST added on top)
+  // GST is considered INCLUSIVE in item prices
+
   const cell = (txt: any, align = 'left', bold = false, small = false) => (
-    <td style={{ padding: '6px 8px', border: '1px solid #d1d5db', fontSize: small ? 11 : 12, textAlign: align as any, fontWeight: bold ? 700 : 400 }}>{txt}</td>
+    <td style={{ padding: '6px 8px', border: '1px solid #d1d5db', fontSize: small ? 10 : 12, textAlign: align as any, fontWeight: bold ? 700 : 400 }}>{txt}</td>
   )
 
   return (
     <>
-      <style>{`@media print { .no-print { display: none !important; } @page { margin: 8mm; size: A4; } }`}</style>
+      <style>{`
+        @media print { .no-print { display: none !important; } @page { margin: 8mm; size: A4; } }
+      `}</style>
 
       {/* Action bar */}
       <div className="no-print" style={{ background: '#1e293b', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10, borderBottom: '1px solid #334155' }}>
@@ -147,32 +173,31 @@ export default function InvoicePage({ params }: { params: { id: string } }) {
             </div>
           </div>
 
-          {/* Items */}
+          {/* Items Table */}
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#e2e8f0' }}>
-                {['#', 'Description', 'HSN', 'Qty', 'Rate', 'Amount', 'GST%', 'GST Amt', 'Total'].map(h => (
-                  <th key={h} style={{ padding: '7px 8px', border: '1px solid #d1d5db', fontSize: 11, fontWeight: 700, textAlign: ['Rate','Amount','GST Amt','Total'].includes(h) ? 'right' : ['#','Qty','GST%'].includes(h) ? 'center' : 'left' }}>{h}</th>
+                {['#', 'Description', 'HSN', 'Qty', 'Rate', 'Amount', 'Discount', 'Taxable', 'GST%', 'GST Amt', 'Total'].map(h => (
+                  <th key={h} style={{ padding: '7px 8px', border: '1px solid #d1d5db', fontSize: 10, fontWeight: 700, textAlign: ['Rate','Amount','Discount','Taxable','GST Amt','Total'].includes(h) ? 'right' : ['#','Qty','GST%'].includes(h) ? 'center' : 'left' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {items.map((item: any, idx: number) => {
-                const gst = calcGST(Number(item.total_price), Number(item.gst_rate) || 0)
-                return (
-                  <tr key={item.id} style={{ background: idx % 2 === 0 ? 'white' : '#f8fafc' }}>
-                    {cell(idx + 1, 'center')}
-                    {cell(item.product_name, 'left', true)}
-                    {cell(item.hsn_code || '—', 'center', false, true)}
-                    {cell(item.quantity, 'center')}
-                    {cell(s(item.unit_price), 'right')}
-                    {cell(s(item.total_price), 'right')}
-                    {cell(`${item.gst_rate || 0}%`, 'center')}
-                    <td style={{ padding: '6px 8px', border: '1px solid #d1d5db', fontSize: 12, textAlign: 'right', color: '#64748b' }}>{s(gst.total)}</td>
-                    {cell(s(Number(item.total_price) + gst.total), 'right', true)}
-                  </tr>
-                )
-              })}
+              {itemCalcs.map((item: any, idx: number) => (
+                <tr key={item.id} style={{ background: idx % 2 === 0 ? 'white' : '#f8fafc' }}>
+                  {cell(idx + 1, 'center')}
+                  {cell(item.product_name, 'left', true)}
+                  {cell(item.hsn_code || '—', 'center', false, true)}
+                  {cell(item.quantity, 'center')}
+                  {cell(fm(item.unit_price), 'right')}
+                  {cell(fm(item.lineTotal), 'right')}
+                  {cell(discount > 0 ? fm(item.lineDiscount) : '—', 'right', false, true)}
+                  {cell(fm(item.taxableAmt), 'right')}
+                  {cell(`${item.gstRate}%`, 'center')}
+                  <td style={{ padding: '6px 8px', border: '1px solid #d1d5db', fontSize: 12, textAlign: 'right', color: '#64748b' }}>{fm(item.gst.total)}</td>
+                  {cell(fm(item.taxableAmt + item.gst.total), 'right', true)}
+                </tr>
+              ))}
             </tbody>
           </table>
 
@@ -181,39 +206,54 @@ export default function InvoicePage({ params }: { params: { id: string } }) {
             <div style={{ padding: '12px 16px', borderRight: '1px solid #d1d5db' }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>HSN-wise Tax Summary</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead><tr style={{ background: '#f1f5f9' }}>
-                  {['HSN', 'Taxable', 'Rate', 'CGST', 'SGST', 'Total'].map(h => (
-                    <th key={h} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: h === 'HSN' ? 'left' : 'right' }}>{h}</th>
-                  ))}
-                </tr></thead>
+                <thead>
+                  <tr style={{ background: '#f1f5f9' }}>
+                    {['HSN', 'Taxable Amt', 'Rate', 'CGST', 'SGST', 'Tax Total'].map(h => (
+                      <th key={h} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: h === 'HSN' ? 'left' : 'right' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
                 <tbody>
                   {hsnRows.map((h: any) => (
                     <tr key={h.hsn}>
                       <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10 }}>{h.hsn}</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{s(h.taxable)}</td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{fm(h.taxable)}</td>
                       <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{h.rate}%</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{s(h.cgst)}</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{s(h.sgst)}</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{s(h.total)}</td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{fm(h.cgst)}</td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{fm(h.sgst)}</td>
+                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(h.total)}</td>
                     </tr>
                   ))}
+                  <tr style={{ background: '#e2e8f0', fontWeight: 700 }}>
+                    <td colSpan={3} style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, fontWeight: 700 }}>Total</td>
+                    <td style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(totalCGST)}</td>
+                    <td style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(totalSGST)}</td>
+                    <td style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(totalGST)}</td>
+                  </tr>
                 </tbody>
               </table>
+              {discount > 0 && (
+                <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, fontStyle: 'italic' }}>
+                  * Discount of {fm(discount)} distributed proportionally. GST calculated on post-discount taxable amount.
+                </div>
+              )}
             </div>
+
             <div style={{ padding: '12px 16px' }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Amount Summary</div>
               {[
-                ['Subtotal (before tax)', s(subtotal)],
-                ...(discount > 0 ? [['Discount', `-${s(discount)}`]] : []),
-                ['CGST', s(totalCGST)],
-                ['SGST', s(totalSGST)],
+                ['Gross Amount', fm(rawSubtotal)],
+                ...(discount > 0 ? [['Discount', `-${fm(discount)}`]] : []),
+                ['Taxable Amount', fm(totalTaxable)],
+                ['CGST', fm(totalCGST)],
+                ['SGST', fm(totalSGST)],
               ].map(([label, value]) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
                   <span>{label}</span><span>{value}</span>
                 </div>
               ))}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 4px', fontSize: 16, fontWeight: 700, color: '#1e293b', borderTop: '2px solid #1e293b', marginTop: 4 }}>
-                <span>Grand Total</span><span>{s(grandTotal)}</span>
+                <span>Grand Total</span><span>{fm(grandTotal)}</span>
               </div>
               <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', marginTop: 4 }}>
                 {numToWords(grandTotal)}
@@ -244,7 +284,6 @@ export default function InvoicePage({ params }: { params: { id: string } }) {
             </div>
           </div>
 
-          {/* Bottom */}
           <div style={{ background: '#1e3a5f', color: 'rgba(255,255,255,0.6)', padding: '8px 16px', fontSize: 10, textAlign: 'center' }}>
             Generated by SahajVyapar &middot; sahajvyapar.in
           </div>
