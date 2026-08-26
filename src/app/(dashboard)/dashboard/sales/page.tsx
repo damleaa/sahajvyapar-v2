@@ -122,7 +122,7 @@ export default function SalesPage() {
                 <td className="px-5 py-3.5"><Badge color={statusColor[sale.payment_status] || 'slate'}>{sale.payment_status}</Badge></td>
                 <td className="px-5 py-3.5">
                   <div className="flex gap-1">
-                    <a href={`/dashboard/invoice/${sale.id}`} target="_blank" className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all" title="View / Print Invoice"><FileText className="w-3.5 h-3.5" /></a>
+                    <a href={`/dashboard/invoice/${sale.id}`} target="_blank" rel="noopener noreferrer" className="p-1.5 text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-all" title="View / Print Invoice"><FileText className="w-3.5 h-3.5" /></a>
                     <button onClick={() => whatsappShare(sale)} className="p-1.5 text-slate-400 hover:text-green-400 hover:bg-green-500/10 rounded-lg transition-all" title="Share on WhatsApp"><Share2 className="w-3.5 h-3.5" /></button>
                   </div>
                 </td>
