@@ -87,3 +87,50 @@
   .no-print { display: none !important; }
   body { background: white; color: black; }
 }
+/* ================================================================
+   PATCH: Add these rules to the BOTTOM of src/app/globals.css
+   Fixes: (c) light text in forms, (d) zero placeholder issue
+   ================================================================ */
+
+/* Fix (c): Input text must be readable white, not dim */
+.input-base {
+  @apply w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700
+         rounded-xl text-white text-sm
+         placeholder-slate-500
+         focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500
+         transition-all;
+}
+
+/* Fix (c): Select options text color */
+.input-base option {
+  background-color: #1e293b;
+  color: white;
+}
+
+/* Fix (c): Textarea readable */
+.input-base[rows] {
+  resize: vertical;
+  min-height: 72px;
+}
+
+/* Fix (d): Number inputs — when value is 0, show placeholder styling
+   The trick: use value="" with placeholder="0" instead of value={0}
+   This CSS ensures the 0 looks like a real value, not faded placeholder */
+input[type="number"].input-base:not(:focus):placeholder-shown {
+  color: #94a3b8; /* slate-400 — treated as empty hint */
+}
+input[type="number"].input-base:not(:placeholder-shown) {
+  color: white; /* user has typed something real */
+}
+
+/* Fix (c): Form labels should be clearly readable */
+label {
+  color: #cbd5e1; /* slate-300 */
+}
+
+/* Fix (c): Ensure modal content text is readable */
+.modal-body input,
+.modal-body textarea,
+.modal-body select {
+  color: white !important;
+}
