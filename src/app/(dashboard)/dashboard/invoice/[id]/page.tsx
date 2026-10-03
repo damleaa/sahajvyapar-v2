@@ -1,294 +1,228 @@
-'use client'
+import { createClient } from '@/lib/supabase/server'
+import { notFound } from 'next/navigation'
 
-import { useState, useEffect } from 'react'
-import Link from 'next/link'
+export default async function InvoicePage({ params }: { params: { id: string } }) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return notFound()
 
-// ── Tax Logic ─────────────────────────────────────────────────────
-// GST applies on taxable value AFTER discount
-// If sale has discount, it is distributed proportionally across items
-// Then GST is calculated on each item's post-discount taxable value
+  const { data: tenant } = await supabase
+    .from('tenants')
+    .select('id, business_name, owner_name, email, phone')
+    .eq('owner_id', user.id)
+    .single()
+  if (!tenant) return notFound()
 
-function calcItemGST(taxableAmount: number, gstRate: number) {
-  const total = taxableAmount * gstRate / 100
-  return { cgst: total / 2, sgst: total / 2, total }
-}
+  const { data: profile } = await supabase
+    .from('business_profiles')
+    .select('*')
+    .eq('tenant_id', tenant.id)
+    .single()
 
-function numToWords(num: number): string {
-  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen']
-  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety']
-  if (num === 0) return 'Zero'
-  const convert = (n: number): string => {
-    if (n < 20) return ones[n]
-    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? ' ' + ones[n % 10] : '')
-    if (n < 1000) return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + convert(n % 100) : '')
-    if (n < 100000) return convert(Math.floor(n / 1000)) + ' Thousand' + (n % 1000 ? ' ' + convert(n % 1000) : '')
-    if (n < 10000000) return convert(Math.floor(n / 100000)) + ' Lakh' + (n % 100000 ? ' ' + convert(n % 100000) : '')
-    return convert(Math.floor(n / 10000000)) + ' Crore' + (n % 10000000 ? ' ' + convert(n % 10000000) : '')
-  }
-  const rupees = Math.floor(num)
-  const paise = Math.round((num - rupees) * 100)
-  let result = convert(rupees) + ' Rupees'
-  if (paise > 0) result += ' and ' + convert(paise) + ' Paise'
-  return result + ' Only'
-}
+  const { data: sale } = await supabase
+    .from('sales')
+    .select('*, sale_items(*)')
+    .eq('id', params.id)
+    .eq('tenant_id', tenant.id)
+    .single()
 
-const fm = (n: number) => `Rs.${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+  if (!sale) return notFound()
 
-export default function InvoicePage({ params }: { params: { id: string } }) {
-  const [data, setData] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const items = sale.sale_items || []
+  const gstRate = items[0]?.gst_rate || 0
+  const taxableAmount = Number(sale.total_amount) - Number(sale.discount_amount || 0)
+  const cgst = gstRate > 0 ? taxableAmount * (gstRate / 200) : 0
+  const sgst = cgst
+  const total = Number(sale.final_amount)
 
-  useEffect(() => {
-    fetch(`/api/invoice?sale_id=${params.id}`)
-      .then(r => r.json())
-      .then(d => { if (d.error) setError(d.error); else setData(d); setLoading(false) })
-      .catch(() => { setError('Failed to load invoice'); setLoading(false) })
-  }, [params.id])
+  // Never show PARTIAL on printed invoice
+  const displayStatus = sale.payment_status === 'paid' ? 'PAID' : 'PAYMENT PENDING'
+  const isPaid = sale.payment_status === 'paid'
+  const isPartialOrPending = sale.payment_status === 'partial' || sale.payment_status === 'pending'
 
-  const whatsappShare = () => {
-    if (!data) return
-    const url = window.location.href
-    const msg = `Invoice: ${data.sale.invoice_number}\nAmount: ${fm(data.sale.final_amount)}\nThank you for your business!\n\n${url}`
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
-  }
-
-  if (loading) return (
-    <div style={{ minHeight: '100vh', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ color: '#64748b' }}>Loading invoice...</div>
-    </div>
-  )
-
-  if (error || !data) return (
-    <div style={{ minHeight: '100vh', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16 }}>
-      <div style={{ color: '#ef4444' }}>{error || 'Invoice not found'}</div>
-      <Link href="/dashboard/sales" style={{ color: '#3b82f6' }}>&larr; Back to Sales</Link>
-    </div>
-  )
-
-  const { sale, profile, tenant } = data
-  const items: any[] = sale.sale_items || []
-
-  // ── Tax Calculation (GST on post-discount taxable amount) ──────
-  const rawSubtotal = items.reduce((s: number, i: any) => s + Number(i.total_price), 0)
-  const discount = Number(sale.discount_amount) || 0
-  const grandTotal = Number(sale.final_amount)
-
-  // Discount ratio to distribute proportionally
-  const discountRatio = rawSubtotal > 0 ? discount / rawSubtotal : 0
-
-  // Per-item calculations with discount applied
-  const itemCalcs = items.map((item: any) => {
-    const lineTotal = Number(item.total_price)
-    const lineDiscount = lineTotal * discountRatio
-    const taxableAmt = lineTotal - lineDiscount  // GST base = post-discount amount
-    const gstRate = Number(item.gst_rate) || 0
-    const gst = calcItemGST(taxableAmt, gstRate)
-    return { ...item, lineTotal, lineDiscount, taxableAmt, gstRate, gst }
-  })
-
-  // HSN-wise summary
-  const hsnMap: Record<string, any> = {}
-  itemCalcs.forEach((item: any) => {
-    const hsn = item.hsn_code || 'N/A'
-    if (!hsnMap[hsn]) hsnMap[hsn] = { hsn, taxable: 0, rate: item.gstRate, cgst: 0, sgst: 0, total: 0 }
-    hsnMap[hsn].taxable += item.taxableAmt
-    hsnMap[hsn].cgst += item.gst.cgst
-    hsnMap[hsn].sgst += item.gst.sgst
-    hsnMap[hsn].total += item.gst.total
-  })
-  const hsnRows = Object.values(hsnMap)
-
-  const totalTaxable = itemCalcs.reduce((s: number, i: any) => s + i.taxableAmt, 0)
-  const totalCGST = hsnRows.reduce((s: number, h: any) => s + h.cgst, 0)
-  const totalSGST = hsnRows.reduce((s: number, h: any) => s + h.sgst, 0)
-  const totalGST = totalCGST + totalSGST
-
-  // Verify: taxable + GST should = grandTotal
-  // (grandTotal = final_amount from DB = subtotal - discount, without GST added on top)
-  // GST is considered INCLUSIVE in item prices
-
-  const cell = (txt: any, align = 'left', bold = false, small = false) => (
-    <td style={{ padding: '6px 8px', border: '1px solid #d1d5db', fontSize: small ? 10 : 12, textAlign: align as any, fontWeight: bold ? 700 : 400 }}>{txt}</td>
-  )
+  const dark = '#0f172a'  // Forced dark text for white-background invoice
 
   return (
-    <>
-      <style>{`
-        @media print { .no-print { display: none !important; } @page { margin: 8mm; size: A4; } }
-      `}</style>
+    <div style={{ fontFamily: 'Arial, sans-serif', maxWidth: 800, margin: '0 auto', padding: '20px', background: '#f8fafc', minHeight: '100vh' }}>
 
-      {/* Action bar */}
-      <div className="no-print" style={{ background: '#1e293b', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 10, borderBottom: '1px solid #334155' }}>
-        <Link href="/dashboard/sales" style={{ color: '#94a3b8', fontSize: 13, textDecoration: 'none' }}>
-          &larr; Back to Sales
-        </Link>
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={whatsappShare} style={{ padding: '8px 16px', background: '#16a34a', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            Share on WhatsApp
-          </button>
-          <button onClick={() => window.print()} style={{ padding: '8px 16px', background: '#2563eb', color: 'white', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            Print / Download PDF
-          </button>
-        </div>
+      {/* Print / Action buttons — hidden on print */}
+      <div style={{ marginBottom: 20, display: 'flex', gap: 12, justifyContent: 'flex-end' }} className="no-print">
+        <button onClick={() => window.print()}
+          style={{ padding: '10px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+          🖨 Print / Save PDF
+        </button>
+        {isPartialOrPending && (
+          <a href="/dashboard/sales"
+            style={{ padding: '10px 20px', background: '#f59e0b', color: 'white', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            ⊕ Add Payment Tranche
+          </a>
+        )}
       </div>
 
-      {/* Invoice */}
-      <div style={{ background: '#f8fafc', minHeight: '100vh', padding: '24px 16px', fontFamily: 'Arial, sans-serif' }}>
-        <div style={{ maxWidth: 820, margin: '0 auto', background: 'white', border: '2px solid #1e293b' }}>
+      {/* Invoice Paper */}
+      <div style={{ background: 'white', padding: 40, borderRadius: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.08)' }}>
 
-          {/* Header */}
-          <div style={{ background: '#1e3a5f', color: 'white', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              {profile?.logo_base64 && (
-                <img src={`data:image/png;base64,${profile.logo_base64}`} alt="Logo" style={{ height: 48, marginBottom: 8, objectFit: 'contain', background: 'white', padding: 4, borderRadius: 4 }} />
-              )}
-              <div style={{ fontSize: 18, fontWeight: 700 }}>{tenant?.business_name || 'Business'}</div>
-              {profile?.address && <div style={{ fontSize: 11, marginTop: 4, opacity: 0.85 }}>{profile.address}</div>}
-              {(profile?.city || profile?.state) && (
-                <div style={{ fontSize: 11, opacity: 0.85 }}>{[profile.city, profile.state, profile.pincode].filter(Boolean).join(', ')}</div>
-              )}
-              {profile?.gstin && <div style={{ fontSize: 11, marginTop: 4 }}>GSTIN: <strong>{profile.gstin}</strong></div>}
-              {profile?.pan && <div style={{ fontSize: 11 }}>PAN: {profile.pan}</div>}
+        {/* Header */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 32, paddingBottom: 24, borderBottom: '2px solid #e2e8f0' }}>
+          <div>
+            {profile?.logo_base64 && (
+              <img src={`data:image/png;base64,${profile.logo_base64}`} alt="Logo"
+                style={{ height: 60, marginBottom: 12, objectFit: 'contain' }} />
+            )}
+            <div style={{ fontSize: 22, fontWeight: 700, color: dark }}>{tenant.business_name}</div>
+            {profile?.address && <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>{profile.address}</div>}
+            {(profile?.city || profile?.state) && (
+              <div style={{ fontSize: 12, color: '#475569' }}>{[profile.city, profile.state, profile.pincode].filter(Boolean).join(', ')}</div>
+            )}
+            {profile?.gstin && <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>GSTIN: <strong style={{ color: dark }}>{profile.gstin}</strong></div>}
+            {tenant.phone && <div style={{ fontSize: 12, color: '#475569' }}>Ph: {tenant.phone}</div>}
+            {tenant.email && <div style={{ fontSize: 12, color: '#475569' }}>{tenant.email}</div>}
+          </div>
+
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#1e40af', letterSpacing: -1 }}>TAX INVOICE</div>
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 13, color: '#64748b' }}>Invoice No.</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: dark }}>{sale.invoice_number}</div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 20, fontWeight: 700, letterSpacing: 1 }}>TAX INVOICE</div>
-              <div style={{ marginTop: 10, background: 'rgba(255,255,255,0.15)', padding: '8px 12px', borderRadius: 4, fontSize: 12 }}>
-                <div>Invoice No: <strong>{sale.invoice_number}</strong></div>
-                <div style={{ marginTop: 4 }}>Date: <strong>{new Date(sale.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</strong></div>
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 13, color: '#64748b' }}>Date</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: dark }}>
+                {new Date(sale.created_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Bill To */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid #d1d5db' }}>
-            <div style={{ padding: '12px 16px', borderRight: '1px solid #d1d5db' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Bill To</div>
-              <div style={{ fontSize: 14, fontWeight: 600 }}>{sale.customer_name || 'Walk-in Customer'}</div>
-            </div>
-            <div style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Payment</div>
-              <div style={{ fontSize: 12 }}>Method: <strong>{(sale.payment_method || 'cash').toUpperCase()}</strong></div>
-              <div style={{ fontSize: 12 }}>Status: <strong style={{ color: sale.payment_status === 'paid' ? '#16a34a' : '#dc2626' }}>{(sale.payment_status || 'paid').toUpperCase()}</strong></div>
-            </div>
+        {/* Bill To + Payment Info */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, marginBottom: 28 }}>
+          <div style={{ background: '#f8fafc', borderRadius: 8, padding: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Bill To</div>
+            {/* FIX: Explicit dark color so name is readable on white background */}
+            <div style={{ fontSize: 16, fontWeight: 700, color: dark }}>{sale.customer_name || 'Walk-in Customer'}</div>
+            {sale.customer_address && <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>{sale.customer_address}</div>}
+            {sale.customer_gstin && <div style={{ fontSize: 12, color: '#475569', marginTop: 2 }}>GSTIN: {sale.customer_gstin}</div>}
           </div>
 
-          {/* Items Table */}
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: '#e2e8f0' }}>
-                {['#', 'Description', 'HSN', 'Qty', 'Rate', 'Amount', 'Discount', 'Taxable', 'GST%', 'GST Amt', 'Total'].map(h => (
-                  <th key={h} style={{ padding: '7px 8px', border: '1px solid #d1d5db', fontSize: 10, fontWeight: 700, textAlign: ['Rate','Amount','Discount','Taxable','GST Amt','Total'].includes(h) ? 'right' : ['#','Qty','GST%'].includes(h) ? 'center' : 'left' }}>{h}</th>
-                ))}
+          <div style={{ background: '#f8fafc', borderRadius: 8, padding: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Payment Details</div>
+            {/* FIX: All payment text explicitly dark */}
+            <div style={{ fontSize: 13, color: dark, marginBottom: 4 }}>
+              Method: <strong style={{ color: dark }}>{(sale.payment_method || 'Cash').toUpperCase()}</strong>
+            </div>
+            <div style={{ fontSize: 13, color: dark }}>
+              Status:{' '}
+              <strong style={{ color: isPaid ? '#16a34a' : '#dc2626' }}>
+                {displayStatus}
+              </strong>
+            </div>
+            {/* Show balance note for partial/pending — but don't say PARTIAL */}
+            {isPartialOrPending && (
+              <div style={{ fontSize: 11, color: '#dc2626', marginTop: 6, fontStyle: 'italic' }}>
+                * Balance due — payment pending
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Items Table */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 24 }}>
+          <thead>
+            <tr style={{ background: '#1e293b' }}>
+              {['#', 'Description', 'HSN', 'Qty', 'Rate', 'GST%', 'Amount'].map(h => (
+                <th key={h} style={{ padding: '10px 12px', textAlign: h === '#' || h === 'Qty' || h === 'GST%' ? 'center' : h === 'Rate' || h === 'Amount' ? 'right' : 'left', fontSize: 11, fontWeight: 600, color: 'white', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item: any, idx: number) => (
+              <tr key={item.id} style={{ borderBottom: '1px solid #e2e8f0', background: idx % 2 === 0 ? 'white' : '#f8fafc' }}>
+                <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 13, color: dark }}>{idx + 1}</td>
+                <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 500, color: dark }}>{item.product_name}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'left', fontSize: 12, color: '#64748b' }}>{item.hsn_code || '—'}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 13, color: dark }}>{item.quantity}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 13, color: dark }}>₹{Number(item.unit_price).toLocaleString('en-IN')}</td>
+                <td style={{ padding: '10px 12px', textAlign: 'center', fontSize: 13, color: dark }}>{item.gst_rate || 0}%</td>
+                <td style={{ padding: '10px 12px', textAlign: 'right', fontSize: 13, fontWeight: 600, color: dark }}>₹{Number(item.total_price).toLocaleString('en-IN')}</td>
               </tr>
-            </thead>
-            <tbody>
-              {itemCalcs.map((item: any, idx: number) => (
-                <tr key={item.id} style={{ background: idx % 2 === 0 ? 'white' : '#f8fafc' }}>
-                  {cell(idx + 1, 'center')}
-                  {cell(item.product_name, 'left', true)}
-                  {cell(item.hsn_code || '—', 'center', false, true)}
-                  {cell(item.quantity, 'center')}
-                  {cell(fm(item.unit_price), 'right')}
-                  {cell(fm(item.lineTotal), 'right')}
-                  {cell(discount > 0 ? fm(item.lineDiscount) : '—', 'right', false, true)}
-                  {cell(fm(item.taxableAmt), 'right')}
-                  {cell(`${item.gstRate}%`, 'center')}
-                  <td style={{ padding: '6px 8px', border: '1px solid #d1d5db', fontSize: 12, textAlign: 'right', color: '#64748b' }}>{fm(item.gst.total)}</td>
-                  {cell(fm(item.taxableAmt + item.gst.total), 'right', true)}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </tbody>
+        </table>
 
-          {/* HSN Summary + Totals */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderTop: '1px solid #d1d5db' }}>
-            <div style={{ padding: '12px 16px', borderRight: '1px solid #d1d5db' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>HSN-wise Tax Summary</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr style={{ background: '#f1f5f9' }}>
-                    {['HSN', 'Taxable Amt', 'Rate', 'CGST', 'SGST', 'Tax Total'].map(h => (
-                      <th key={h} style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: h === 'HSN' ? 'left' : 'right' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {hsnRows.map((h: any) => (
-                    <tr key={h.hsn}>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10 }}>{h.hsn}</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{fm(h.taxable)}</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{h.rate}%</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{fm(h.cgst)}</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right' }}>{fm(h.sgst)}</td>
-                      <td style={{ padding: '4px 6px', border: '1px solid #e2e8f0', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(h.total)}</td>
-                    </tr>
-                  ))}
-                  <tr style={{ background: '#e2e8f0', fontWeight: 700 }}>
-                    <td colSpan={3} style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, fontWeight: 700 }}>Total</td>
-                    <td style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(totalCGST)}</td>
-                    <td style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(totalSGST)}</td>
-                    <td style={{ padding: '4px 6px', border: '1px solid #d1d5db', fontSize: 10, textAlign: 'right', fontWeight: 700 }}>{fm(totalGST)}</td>
-                  </tr>
-                </tbody>
-              </table>
-              {discount > 0 && (
-                <div style={{ fontSize: 10, color: '#64748b', marginTop: 6, fontStyle: 'italic' }}>
-                  * Discount of {fm(discount)} distributed proportionally. GST calculated on post-discount taxable amount.
-                </div>
-              )}
-            </div>
-
-            <div style={{ padding: '12px 16px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Amount Summary</div>
-              {[
-                ['Gross Amount', fm(rawSubtotal)],
-                ...(discount > 0 ? [['Discount', `-${fm(discount)}`]] : []),
-                ['Taxable Amount', fm(totalTaxable)],
-                ['CGST', fm(totalCGST)],
-                ['SGST', fm(totalSGST)],
-              ].map(([label, value]) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 12, borderBottom: '1px solid #f1f5f9', color: '#475569' }}>
-                  <span>{label}</span><span>{value}</span>
-                </div>
-              ))}
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 4px', fontSize: 16, fontWeight: 700, color: '#1e293b', borderTop: '2px solid #1e293b', marginTop: 4 }}>
-                <span>Grand Total</span><span>{fm(grandTotal)}</span>
+        {/* Totals */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 28 }}>
+          <div style={{ width: 280 }}>
+            {Number(sale.discount_amount) > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13, color: dark }}>
+                <span>Subtotal</span><span>₹{Number(sale.total_amount).toLocaleString('en-IN')}</span>
               </div>
-              <div style={{ fontSize: 10, color: '#64748b', fontStyle: 'italic', marginTop: 4 }}>
-                {numToWords(grandTotal)}
+            )}
+            {Number(sale.discount_amount) > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13, color: '#16a34a' }}>
+                <span>Discount</span><span>−₹{Number(sale.discount_amount).toLocaleString('en-IN')}</span>
               </div>
+            )}
+            {gstRate > 0 && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13, color: dark }}>
+                  <span>Taxable Amount</span><span>₹{taxableAmount.toLocaleString('en-IN')}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13, color: dark }}>
+                  <span>CGST ({gstRate / 2}%)</span><span>₹{cgst.toFixed(2)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: 13, color: dark }}>
+                  <span>SGST ({gstRate / 2}%)</span><span>₹{sgst.toFixed(2)}</span>
+                </div>
+              </>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', background: '#1e293b', borderRadius: 8, marginTop: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: 'white' }}>Total</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: '#60a5fa' }}>₹{total.toLocaleString('en-IN')}</span>
             </div>
           </div>
+        </div>
 
-          {/* Bank Details */}
-          {(profile?.bank_name || profile?.account_no) && (
-            <div style={{ padding: '10px 16px', borderTop: '1px solid #d1d5db', background: '#f8fafc' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Bank Details</div>
-              <div style={{ fontSize: 11, color: '#374151' }}>
-                {[profile.bank_name && `Bank: ${profile.bank_name}`, profile.account_no && `A/C: ${profile.account_no}`, profile.ifsc && `IFSC: ${profile.ifsc}`].filter(Boolean).join('  |  ')}
-              </div>
-            </div>
-          )}
-
-          {/* Notes + Signature */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderTop: '1px solid #d1d5db' }}>
-            <div style={{ padding: '12px 16px', borderRight: '1px solid #d1d5db' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Notes</div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>{sale.notes || 'Thank you for your business!'}</div>
-              <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6 }}>This is a computer generated invoice.</div>
-            </div>
-            <div style={{ padding: '12px 16px', textAlign: 'right' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 48 }}>For {tenant?.business_name}</div>
-              <div style={{ borderTop: '1px solid #94a3b8', paddingTop: 4, fontSize: 10, color: '#64748b' }}>Authorised Signatory</div>
+        {/* Bank Details */}
+        {(profile?.bank_name || profile?.account_no) && (
+          <div style={{ background: '#f8fafc', borderRadius: 8, padding: 16, marginBottom: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Bank Details</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, fontSize: 12 }}>
+              {profile.bank_name && <div><span style={{ color: '#64748b' }}>Bank: </span><strong style={{ color: dark }}>{profile.bank_name}</strong></div>}
+              {profile.account_no && <div><span style={{ color: '#64748b' }}>A/c: </span><strong style={{ color: dark }}>{profile.account_no}</strong></div>}
+              {profile.ifsc && <div><span style={{ color: '#64748b' }}>IFSC: </span><strong style={{ color: dark }}>{profile.ifsc}</strong></div>}
             </div>
           </div>
+        )}
 
-          <div style={{ background: '#1e3a5f', color: 'rgba(255,255,255,0.6)', padding: '8px 16px', fontSize: 10, textAlign: 'center' }}>
-            Generated by SahajVyapar &middot; sahajvyapar.in
+        {/* Notes */}
+        {sale.notes && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, color: '#64748b', marginBottom: 4 }}>Notes:</div>
+            <div style={{ fontSize: 13, color: dark }}>{sale.notes}</div>
+          </div>
+        )}
+
+        {/* Footer */}
+        <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>
+            This is a computer-generated invoice and does not require a signature.
+            {profile?.gstin && ` · GSTIN: ${profile.gstin}`}
+          </div>
+          <div style={{ fontSize: 12, color: '#94a3b8', textAlign: 'right' }}>
+            <div style={{ fontWeight: 600, color: dark, marginBottom: 2 }}>For {tenant.business_name}</div>
+            <div>Authorised Signatory</div>
           </div>
         </div>
       </div>
-    </>
+
+      {/* Print styles */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          body { background: white !important; }
+          div[style*="background: #f8fafc"] { background: white !important; }
+        }
+      `}</style>
+    </div>
   )
 }
