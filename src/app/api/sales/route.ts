@@ -11,6 +11,18 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search') || ''
 
+  // Return payment tranches for a specific sale
+  const paymentsFor = searchParams.get('payments_for')
+  if (paymentsFor) {
+    const { data: payments } = await supabase
+      .from('sale_payments')
+      .select('*')
+      .eq('sale_id', paymentsFor)
+      .eq('tenant_id', tenant.id)
+      .order('created_at', { ascending: true })
+    return NextResponse.json({ payments: payments || [] })
+  }
+
   let query = supabase
     .from('sales')
     .select('*, sale_items(id, product_name, quantity, unit_price, total_price)')
@@ -106,61 +118,46 @@ export async function POST(req: NextRequest) {
 
     await supabase.from('business_profiles').update({ invoice_counter: counter }).eq('tenant_id', tenant.id)
 
-    // Credit sale — update customer balance and ledger
+    // Pending / credit sale — update customer balance
     if (saleData.payment_status === 'pending' && saleData.customer_id) {
       const { data: cust } = await supabase
-        .from('customers')
-        .select('credit_balance')
-        .eq('id', saleData.customer_id)
-        .single()
-
+        .from('customers').select('credit_balance').eq('id', saleData.customer_id).single()
       await supabase.from('customers')
         .update({ credit_balance: (Number(cust?.credit_balance) || 0) + final })
         .eq('id', saleData.customer_id)
-
       await supabase.from('customer_ledger').insert({
-        tenant_id: tenant.id,
-        customer_id: saleData.customer_id,
-        entry_type: 'credit',
-        amount: final,
-        note: `Credit sale: ${invoiceNumber}`,
-        reference_id: sale.id,
-        reference_type: 'sale',
+        tenant_id: tenant.id, customer_id: saleData.customer_id,
+        entry_type: 'credit', amount: final,
+        note: `Credit sale: ${invoiceNumber}`, reference_id: sale.id, reference_type: 'sale',
       })
     }
 
-    // Partial payment — record initial payment and set balance
-    if (saleData.payment_status === 'partial' && saleData.partial_amount && saleData.customer_id) {
+    // Partial payment — record first tranche and set balance
+    if (saleData.payment_status === 'partial' && saleData.partial_amount) {
       const paid = Number(saleData.partial_amount)
       const balance = Math.max(0, final - paid)
 
+      // Record the first tranche
       await supabase.from('sale_payments').insert({
         sale_id: sale.id,
         tenant_id: tenant.id,
         amount: paid,
         payment_method: saleData.payment_method || 'cash',
-        note: `Initial partial payment for ${invoiceNumber}`,
-      }).then(() => {}) // ignore if table not yet created
+        note: `Tranche 1 for ${invoiceNumber}`,
+      })
 
+      // Set outstanding balance on customer if linked
       if (saleData.customer_id && balance > 0) {
         const { data: cust } = await supabase
-          .from('customers')
-          .select('credit_balance')
-          .eq('id', saleData.customer_id)
-          .single()
-
+          .from('customers').select('credit_balance').eq('id', saleData.customer_id).single()
         await supabase.from('customers')
           .update({ credit_balance: (Number(cust?.credit_balance) || 0) + balance })
           .eq('id', saleData.customer_id)
-
         await supabase.from('customer_ledger').insert({
-          tenant_id: tenant.id,
-          customer_id: saleData.customer_id,
-          entry_type: 'credit',
-          amount: balance,
+          tenant_id: tenant.id, customer_id: saleData.customer_id,
+          entry_type: 'credit', amount: balance,
           note: `Balance due: ${invoiceNumber} (paid ₹${paid} of ₹${final})`,
-          reference_id: sale.id,
-          reference_type: 'sale',
+          reference_id: sale.id, reference_type: 'sale',
         })
       }
     }
@@ -168,7 +165,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, sale_id: sale.id, invoice_number: invoiceNumber })
   }
 
-  // ── Record Additional Payment on existing sale ────────────────
+  // ── Record Additional Payment Tranche ─────────────────────────
   if (action === 'record_payment') {
     const { sale_id, amount, method, note } = data
     if (!sale_id || !amount) return NextResponse.json({ error: 'Missing sale_id or amount' }, { status: 400 })
@@ -182,17 +179,15 @@ export async function POST(req: NextRequest) {
 
     if (fetchErr || !sale) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
 
-    // Total paid so far + this payment
+    // Sum existing payments + this one
     const { data: existingPayments } = await supabase
-      .from('sale_payments')
-      .select('amount')
-      .eq('sale_id', sale_id)
+      .from('sale_payments').select('amount').eq('sale_id', sale_id)
 
     const totalPaid = (existingPayments || []).reduce((s: number, p: any) => s + Number(p.amount), 0) + Number(amount)
     const saleTotal = Number(sale.final_amount)
     const newStatus = totalPaid >= saleTotal ? 'paid' : 'partial'
 
-    // Insert payment record (graceful fallback if table missing)
+    // Insert payment record
     const { error: payErr } = await supabase.from('sale_payments').insert({
       sale_id,
       tenant_id: tenant.id,
@@ -202,7 +197,7 @@ export async function POST(req: NextRequest) {
     })
 
     if (payErr) {
-      console.warn('sale_payments insert failed:', payErr.message)
+      console.warn('sale_payments insert failed (table may not exist yet):', payErr.message)
     }
 
     // Update sale status
@@ -215,14 +210,9 @@ export async function POST(req: NextRequest) {
     // Reduce customer credit balance
     if (sale.customer_id) {
       const { data: cust } = await supabase
-        .from('customers')
-        .select('credit_balance')
-        .eq('id', sale.customer_id)
-        .single()
-
+        .from('customers').select('credit_balance').eq('id', sale.customer_id).single()
       const newBalance = Math.max(0, Number(cust?.credit_balance || 0) - Number(amount))
       await supabase.from('customers').update({ credit_balance: newBalance }).eq('id', sale.customer_id)
-
       await supabase.from('customer_ledger').insert({
         tenant_id: tenant.id,
         customer_id: sale.customer_id,

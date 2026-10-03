@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, Search, Package, Edit2, Trash2, ArrowUpDown } from 'lucide-react'
 import { Modal, useToast, EmptyState, Badge } from '@/components/ui'
+import NumInput from '@/components/NumInput'
 
 interface Product {
   id: string; name: string; sku?: string; category_name?: string; category_id?: string
@@ -58,7 +59,10 @@ export default function InventoryPage() {
     if (!form.name) { toast('Product name is required', 'error'); return }
     if (Number(form.selling_price) < Number(form.cost_price)) { toast('Selling price should be ≥ cost price', 'error'); return }
     setSaving(true)
-    const r = await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save', ...form, id: editing?.id }) }).then(r => r.json())
+    const r = await fetch('/api/inventory', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', ...form, id: editing?.id })
+    }).then(r => r.json())
     setSaving(false)
     if (r.error) { toast(r.error, 'error'); return }
     toast(editing ? 'Product updated!' : 'Product added!')
@@ -76,7 +80,10 @@ export default function InventoryPage() {
   const adjustStock = async () => {
     if (!stockForm.qty || Number(stockForm.qty) <= 0) { toast('Enter valid quantity', 'error'); return }
     setSaving(true)
-    await fetch('/api/inventory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'adjust_stock', product_id: stockProduct?.id, movement_type: stockForm.type, quantity: stockForm.qty, note: stockForm.note }) })
+    await fetch('/api/inventory', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'adjust_stock', product_id: stockProduct?.id, movement_type: stockForm.type, quantity: stockForm.qty, note: stockForm.note })
+    })
     setSaving(false)
     toast('Stock updated!')
     setModal(null)
@@ -85,7 +92,10 @@ export default function InventoryPage() {
 
   const addCategory = async () => {
     if (!newCatName.trim()) return
-    const r = await fetch('/api/settings/categories', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'save', name: newCatName.trim() }) }).then(r => r.json())
+    const r = await fetch('/api/settings/categories', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save', name: newCatName.trim() })
+    }).then(r => r.json())
     if (r.error) { toast(r.error, 'error'); return }
     toast('Category added!')
     setNewCatName(''); setShowCatModal(false)
@@ -100,7 +110,11 @@ export default function InventoryPage() {
     setCatSuggestions(globalCats.filter(g => g.name.toLowerCase().includes(q.toLowerCase()) && !existing.includes(g.name.toLowerCase())).slice(0, 5))
   }
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase()) || p.category_name?.toLowerCase().includes(search.toLowerCase()))
+  const filtered = products.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) ||
+    p.sku?.toLowerCase().includes(search.toLowerCase()) ||
+    p.category_name?.toLowerCase().includes(search.toLowerCase())
+  )
   const lowStockCount = products.filter(p => p.stock_quantity <= p.low_stock_alert).length
 
   return (
@@ -109,7 +123,9 @@ export default function InventoryPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">Inventory</h1>
-          <p className="text-slate-400 text-sm mt-0.5">{products.length} products · {lowStockCount > 0 && <span className="text-red-400">{lowStockCount} low stock</span>}</p>
+          <p className="text-slate-400 text-sm mt-0.5">
+            {products.length} products · {lowStockCount > 0 && <span className="text-red-400">{lowStockCount} low stock</span>}
+          </p>
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowCatModal(true)} className="btn-secondary">+ Category</button>
@@ -196,22 +212,23 @@ export default function InventoryPage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Cost Price (₹) *</label>
-              <input type="number" value={form.cost_price || 0} onChange={e => setForm((f: any) => ({ ...f, cost_price: e.target.value }))} className="input-base" min={0} />
+              {/* FIX: NumInput replaces value={form.cost_price || 0} */}
+              <NumInput value={form.cost_price} onChange={v => setForm((f: any) => ({ ...f, cost_price: v }))} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Selling Price (₹) *</label>
-              <input type="number" value={form.selling_price || 0} onChange={e => setForm((f: any) => ({ ...f, selling_price: e.target.value }))} className="input-base" min={0} />
-              {Number(form.selling_price) < Number(form.cost_price) && form.selling_price > 0 && (
+              <NumInput value={form.selling_price} onChange={v => setForm((f: any) => ({ ...f, selling_price: v }))} />
+              {Number(form.selling_price) > 0 && Number(form.selling_price) < Number(form.cost_price) && (
                 <p className="text-amber-400 text-xs mt-1">⚠ Selling price is below cost price</p>
               )}
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Opening Stock</label>
-              <input type="number" value={form.stock_quantity || 0} onChange={e => setForm((f: any) => ({ ...f, stock_quantity: e.target.value }))} className="input-base" min={0} />
+              <NumInput value={form.stock_quantity} onChange={v => setForm((f: any) => ({ ...f, stock_quantity: v }))} />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Low Stock Alert</label>
-              <input type="number" value={form.low_stock_alert || 5} onChange={e => setForm((f: any) => ({ ...f, low_stock_alert: e.target.value }))} className="input-base" min={0} />
+              <NumInput value={form.low_stock_alert} onChange={v => setForm((f: any) => ({ ...f, low_stock_alert: v }))} placeholder="5" />
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">GST Rate (%)</label>
@@ -244,6 +261,7 @@ export default function InventoryPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">Quantity</label>
+            {/* stockForm.qty is already a string so standard input is fine here */}
             <input type="number" value={stockForm.qty} onChange={e => setStockForm(f => ({ ...f, qty: e.target.value }))} className="input-base" placeholder="Enter quantity" min={0} />
             <p className="text-slate-500 text-xs mt-1">Current stock: {stockProduct?.stock_quantity} {stockProduct?.unit}</p>
           </div>

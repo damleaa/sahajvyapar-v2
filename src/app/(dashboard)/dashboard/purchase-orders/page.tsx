@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { Plus, ClipboardList } from 'lucide-react'
 import { Modal, useToast, EmptyState, Badge, LockedFeature } from '@/components/ui'
+import NumInput from '@/components/NumInput'
 
 export default function PurchaseOrdersPage() {
   const [pos, setPOs] = useState<any[]>([])
@@ -34,7 +35,10 @@ export default function PurchaseOrdersPage() {
     if (!form.supplier_id) { toast('Select a supplier', 'error'); return }
     const validItems = form.items.filter((i: any) => i.product_id && i.ordered_qty > 0)
     if (!validItems.length) { toast('Add at least one item', 'error'); return }
-    const r = await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create', ...form, items: validItems }) }).then(r => r.json())
+    const r = await fetch('/api/purchase-orders', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', ...form, items: validItems })
+    }).then(r => r.json())
     if (r.error) { toast(r.error, 'error'); return }
     toast(`PO created: ${r.po_number}`)
     setModal(null)
@@ -43,7 +47,10 @@ export default function PurchaseOrdersPage() {
 
   const receivePO = async () => {
     const items = selectedPO.po_items.map((i: any) => ({ ...i, receiving_now: Number(i.receiving_now || 0) }))
-    const r = await fetch('/api/purchase-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'receive', po_id: selectedPO.id, items, supplier_ref_number: selectedPO.supplier_ref_number }) }).then(r => r.json())
+    const r = await fetch('/api/purchase-orders', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'receive', po_id: selectedPO.id, items, supplier_ref_number: selectedPO.supplier_ref_number })
+    }).then(r => r.json())
     if (r.error) { toast(r.error, 'error'); return }
     toast('Stock received and inventory updated!')
     setModal(null)
@@ -59,11 +66,21 @@ export default function PurchaseOrdersPage() {
       <ToastContainer />
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">Purchase Orders</h1>
-        <button onClick={() => { setForm({ supplier_id: '', expected_date: '', supplier_ref_number: '', notes: '', items: [{ product_id: '', ordered_qty: 1, unit_price: 0 }] }); setModal('create') }} className="btn-primary"><Plus className="w-4 h-4" /> Create PO</button>
+        <button onClick={() => {
+          setForm({ supplier_id: '', expected_date: '', supplier_ref_number: '', notes: '', items: [{ product_id: '', ordered_qty: 1, unit_price: 0 }] })
+          setModal('create')
+        }} className="btn-primary"><Plus className="w-4 h-4" /> Create PO</button>
       </div>
+
       <div className="card overflow-hidden">
         <table className="w-full">
-          <thead><tr className="border-b border-slate-800">{['PO Number', 'Supplier', 'Supplier Ref', 'Date', 'Amount', 'Status', ''].map(h => <th key={h} className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase">{h}</th>)}</tr></thead>
+          <thead>
+            <tr className="border-b border-slate-800">
+              {['PO Number', 'Supplier', 'Supplier Ref', 'Date', 'Amount', 'Status', ''].map(h => (
+                <th key={h} className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase">{h}</th>
+              ))}
+            </tr>
+          </thead>
           <tbody className="divide-y divide-slate-800">
             {loading ? <tr><td colSpan={7} className="py-12 text-center text-slate-500">Loading...</td></tr>
             : pos.length === 0 ? <tr><td colSpan={7}><EmptyState icon={<ClipboardList className="w-6 h-6" />} title="No purchase orders yet" /></td></tr>
@@ -93,27 +110,64 @@ export default function PurchaseOrdersPage() {
       <Modal open={modal === 'create'} onClose={() => setModal(null)} title="Create Purchase Order" size="xl">
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <div><label className="block text-sm font-medium text-slate-300 mb-1.5">Supplier *</label>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Supplier *</label>
               <select value={form.supplier_id} onChange={e => setForm((f: any) => ({ ...f, supplier_id: e.target.value }))} className="input-base">
                 <option value="">Select supplier</option>
                 {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <div><label className="block text-sm font-medium text-slate-300 mb-1.5">Expected Delivery</label><input type="date" value={form.expected_date || ''} onChange={e => setForm((f: any) => ({ ...f, expected_date: e.target.value }))} className="input-base" /></div>
-            <div><label className="block text-sm font-medium text-slate-300 mb-1.5">Supplier Ref No.</label><input value={form.supplier_ref_number || ''} onChange={e => setForm((f: any) => ({ ...f, supplier_ref_number: e.target.value }))} className="input-base" placeholder="Supplier's invoice/ref number" /></div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Expected Delivery</label>
+              <input type="date" value={form.expected_date || ''} onChange={e => setForm((f: any) => ({ ...f, expected_date: e.target.value }))} className="input-base" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Supplier Ref No.</label>
+              <input value={form.supplier_ref_number || ''} onChange={e => setForm((f: any) => ({ ...f, supplier_ref_number: e.target.value }))} className="input-base" placeholder="Supplier's invoice/ref number" />
+            </div>
           </div>
+
           <div>
-            <div className="flex justify-between mb-2"><label className="text-sm font-medium text-slate-300">Items *</label><button onClick={() => setForm((f: any) => ({ ...f, items: [...f.items, { product_id: '', ordered_qty: 1, unit_price: 0 }] }))} className="text-xs text-blue-400">+ Add Item</button></div>
+            <div className="flex justify-between mb-2">
+              <label className="text-sm font-medium text-slate-300">Items *</label>
+              <button onClick={() => setForm((f: any) => ({ ...f, items: [...f.items, { product_id: '', ordered_qty: 1, unit_price: 0 }] }))} className="text-xs text-blue-400">+ Add Item</button>
+            </div>
             <div className="space-y-2">
               {form.items?.map((item: any, idx: number) => (
                 <div key={idx} className="grid grid-cols-10 gap-2 items-center">
-                  <div className="col-span-5"><select value={item.product_id} onChange={e => {
-                    const p = products.find((x: any) => x.id === e.target.value)
-                    setForm((f: any) => ({ ...f, items: f.items.map((x: any, i: number) => i === idx ? { ...x, product_id: e.target.value, unit_price: p?.cost_price || 0 } : x) }))
-                  }} className="input-base text-sm"><option value="">Select product</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
-                  <div className="col-span-2"><input type="number" value={item.ordered_qty} onChange={e => setForm((f: any) => ({ ...f, items: f.items.map((x: any, i: number) => i === idx ? { ...x, ordered_qty: Number(e.target.value) } : x) }))} className="input-base text-sm" placeholder="Qty" min={1} /></div>
-                  <div className="col-span-2"><input type="number" value={item.unit_price} onChange={e => setForm((f: any) => ({ ...f, items: f.items.map((x: any, i: number) => i === idx ? { ...x, unit_price: Number(e.target.value) } : x) }))} className="input-base text-sm" placeholder="Unit cost" min={0} /></div>
-                  <div className="col-span-1 text-right">{form.items.length > 1 && <button onClick={() => setForm((f: any) => ({ ...f, items: f.items.filter((_: any, i: number) => i !== idx) }))} className="text-red-400 text-lg">×</button>}</div>
+                  <div className="col-span-5">
+                    <select value={item.product_id} onChange={e => {
+                      const p = products.find((x: any) => x.id === e.target.value)
+                      setForm((f: any) => ({ ...f, items: f.items.map((x: any, i: number) => i === idx ? { ...x, product_id: e.target.value, unit_price: p?.cost_price || 0 } : x) }))
+                    }} className="input-base text-sm">
+                      <option value="">Select product</option>
+                      {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-2">
+                    {/* FIX: NumInput for ordered_qty */}
+                    <NumInput
+                      value={item.ordered_qty}
+                      onChange={v => setForm((f: any) => ({ ...f, items: f.items.map((x: any, i: number) => i === idx ? { ...x, ordered_qty: v || 1 } : x) }))}
+                      placeholder="Qty"
+                      min={1}
+                      className="input-base text-sm"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    {/* FIX: NumInput for unit_price */}
+                    <NumInput
+                      value={item.unit_price}
+                      onChange={v => setForm((f: any) => ({ ...f, items: f.items.map((x: any, i: number) => i === idx ? { ...x, unit_price: v } : x) }))}
+                      placeholder="Unit cost"
+                      className="input-base text-sm"
+                    />
+                  </div>
+                  <div className="col-span-1 text-right">
+                    {form.items.length > 1 && (
+                      <button onClick={() => setForm((f: any) => ({ ...f, items: f.items.filter((_: any, i: number) => i !== idx) }))} className="text-red-400 text-lg">×</button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -128,7 +182,8 @@ export default function PurchaseOrdersPage() {
       {/* Receive Stock Modal */}
       <Modal open={modal === 'receive'} onClose={() => setModal(null)} title={`Receive Stock — ${selectedPO?.po_number}`} size="lg">
         <div className="p-6 space-y-4">
-          <div><label className="block text-sm font-medium text-slate-300 mb-1.5">Supplier Invoice / Ref No.</label>
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">Supplier Invoice / Ref No.</label>
             <input value={selectedPO?.supplier_ref_number || ''} onChange={e => setSelectedPO((p: any) => ({ ...p, supplier_ref_number: e.target.value }))} className="input-base" placeholder="Enter supplier's invoice number" />
           </div>
           <div className="space-y-2">
@@ -136,7 +191,16 @@ export default function PurchaseOrdersPage() {
               <div key={item.id} className="grid grid-cols-5 gap-3 items-center bg-slate-800/30 rounded-lg px-4 py-3">
                 <div className="col-span-2 text-sm font-medium text-white">{item.product_name}</div>
                 <div className="text-xs text-slate-400">Ordered: {item.ordered_qty} | Received: {item.received_qty}</div>
-                <div><input type="number" value={item.receiving_now || 0} onChange={e => setSelectedPO((p: any) => ({ ...p, po_items: p.po_items.map((x: any, i: number) => i === idx ? { ...x, receiving_now: Number(e.target.value) } : x) }))} className="input-base text-sm" min={0} max={item.ordered_qty - item.received_qty} placeholder="Receiving now" /></div>
+                <div>
+                  {/* FIX: NumInput for receiving_now */}
+                  <NumInput
+                    value={item.receiving_now}
+                    onChange={v => setSelectedPO((p: any) => ({ ...p, po_items: p.po_items.map((x: any, i: number) => i === idx ? { ...x, receiving_now: v } : x) }))}
+                    placeholder="Receiving now"
+                    max={item.ordered_qty - item.received_qty}
+                    className="input-base text-sm"
+                  />
+                </div>
                 <div className="text-xs text-slate-500">Max: {item.ordered_qty - item.received_qty}</div>
               </div>
             ))}
