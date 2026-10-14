@@ -1,49 +1,98 @@
+// src/app/api/exhibitions/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@supabase/supabase-js'
 
-export async function GET() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json([], { status: 401 })
-  const { data: tenant } = await supabase.from('tenants').select('id, plan').eq('owner_id', user.id).single()
-  if (!tenant) return NextResponse.json([])
-  if (tenant.plan === 'starter' || tenant.plan === 'growth') return NextResponse.json({ locked: true })
-  const { data } = await supabase.from('exhibitions').select('*').eq('tenant_id', tenant.id).order('created_at', { ascending: false })
-  return NextResponse.json(data || [])
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
+async function getTenantId(req: NextRequest) {
+  const authHeader = req.headers.get('Authorization')
+  if (!authHeader) return null
+  const token = authHeader.replace('Bearer ', '')
+  const { data: { user }, error } = await supabase.auth.getUser(token)
+  if (error || !user) return null
+  const { data: tenant } = await supabase.from('tenants').select('id').eq('owner_id', user.id).single()
+  return tenant?.id || null
+}
+
+export async function GET(req: NextRequest) {
+  const tenantId = await getTenantId(req)
+  if (!tenantId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Fetch exhibitions
+  const { data: exhibitions, error } = await supabase
+    .from('exhibitions')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .order('start_date', { ascending: false })
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Aggregate total_sales from sales table for each exhibition
+  const { data: salesTotals } = await supabase
+    .from('sales')
+    .select('exhibition_id, final_amount')
+    .eq('tenant_id', tenantId)
+    .not('exhibition_id', 'is', null)
+
+  // Build a map: exhibition_id -> total
+  const totalsMap: Record<string, number> = {}
+  for (const s of salesTotals || []) {
+    if (s.exhibition_id) {
+      totalsMap[s.exhibition_id] = (totalsMap[s.exhibition_id] || 0) + Number(s.final_amount || 0)
+    }
+  }
+
+  // Attach computed total_sales to each exhibition
+  const enriched = (exhibitions || []).map(ex => ({
+    ...ex,
+    total_sales: totalsMap[ex.id] || 0,
+  }))
+
+  return NextResponse.json({ exhibitions: enriched })
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { data: tenant } = await supabase.from('tenants').select('id, plan').eq('owner_id', user.id).single()
-  if (!tenant) return NextResponse.json({ error: 'No tenant' }, { status: 403 })
-  if (tenant.plan !== 'pro') return NextResponse.json({ error: 'Pro plan required for Exhibitions' }, { status: 403 })
+  const tenantId = await getTenantId(req)
+  if (!tenantId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { action, ...data } = body
+  const { action, id, ...fields } = body
 
-  if (action === 'save') {
-    const payload = {
-      tenant_id: tenant.id,
-      name: data.name,
-      venue: data.venue || null,
-      city: data.city || null,
-      start_date: data.start_date || null,
-      end_date: data.end_date || null,
-      stall_cost: Number(data.stall_cost) || 0,
-      other_expenses: Number(data.other_expenses) || 0,
-      total_sales: Number(data.total_sales) || 0,
-      status: data.status || 'upcoming',
-      notes: data.notes || null,
-    }
-    if (data.id) {
-      const { error } = await supabase.from('exhibitions').update(payload).eq('id', data.id).eq('tenant_id', tenant.id)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    } else {
-      const { error } = await supabase.from('exhibitions').insert(payload)
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    }
+  // Remove total_sales if sent — it's computed, not stored
+  delete fields.total_sales
+
+  if (action === 'create') {
+    const { data, error } = await supabase
+      .from('exhibitions')
+      .insert({ tenant_id: tenantId, ...fields })
+      .select()
+      .single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ exhibition: data })
+  }
+
+  if (action === 'update') {
+    const { data, error } = await supabase
+      .from('exhibitions')
+      .update(fields)
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .select()
+      .single()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ exhibition: data })
+  }
+
+  if (action === 'delete') {
+    const { error } = await supabase
+      .from('exhibitions')
+      .delete()
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ success: true })
   }
 
