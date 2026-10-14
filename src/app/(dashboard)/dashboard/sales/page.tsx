@@ -89,7 +89,7 @@ export default function SalesPage() {
     setCustomers(customersData.customers || [])
     // Only show active / upcoming exhibitions in dropdown
     const activeExhibitions = (exhibitionsData.exhibitions || []).filter(
-      (e: Exhibition) => e.status === 'active' || e.status === 'upcoming'
+      (e: Exhibition) => e.status === 'active' || e.status === 'completed'
     )
     setExhibitions(activeExhibitions)
     setLoading(false)
