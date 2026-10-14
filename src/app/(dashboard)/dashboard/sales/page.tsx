@@ -84,10 +84,11 @@ export default function SalesPage() {
       customersRes.json(),
       exhibitionsRes.json(),
     ])
-    setSales(salesData.sales || [])
-    setProducts(productsData.products || [])
-    setCustomers(customersData.customers || [])
-    // Only show active / upcoming exhibitions in dropdown
+    // Handle both plain array and wrapped { sales: [] } response formats
+    setSales(Array.isArray(salesData) ? salesData : (salesData.sales || []))
+    setProducts(Array.isArray(productsData) ? productsData : (productsData.products || []))
+    setCustomers(Array.isArray(customersData) ? customersData : (customersData.customers || []))
+    // Only show active + completed exhibitions in dropdown (not upcoming)
     const activeExhibitions = (exhibitionsData.exhibitions || []).filter(
       (e: Exhibition) => e.status === 'active' || e.status === 'completed'
     )

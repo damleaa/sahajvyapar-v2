@@ -90,12 +90,12 @@ export default function ExhibitionsPage() {
     fetchAll()
   }
 
-  async function deleteExhibition(id: string) {
-    if (!confirm('Delete this exhibition? This cannot be undone.')) return
+  async function archiveExhibition(id: string, name: string) {
+    if (!confirm(`Archive "${name}"? It will be hidden but all data is preserved.`)) return
     await fetch('/api/exhibitions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', id }),
+      body: JSON.stringify({ action: 'archive', id }),
     })
     fetchAll()
   }
@@ -199,7 +199,7 @@ export default function ExhibitionsPage() {
                       {expandedId === ex.id ? 'Hide P&L' : 'View P&L'}
                     </button>
                     <button onClick={() => openEdit(ex)} className="text-xs text-slate-400 hover:text-white">Edit</button>
-                    <button onClick={() => deleteExhibition(ex.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
+                    <button onClick={() => archiveExhibition(ex.id, ex.name)} className="text-xs text-slate-500 hover:text-slate-300">Archive</button>
                   </div>
                 </div>
 

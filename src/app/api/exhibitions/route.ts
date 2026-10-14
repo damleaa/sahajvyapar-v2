@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
     .from('exhibitions')
     .select('*')
     .eq('tenant_id', tenant.id)
+    .neq('status', 'archived')
     .order('start_date', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -71,13 +72,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ exhibition: data })
   }
 
-  if (action === 'delete') {
+  if (action === 'archive') {
+    // Soft-delete: mark as archived, record audit trail
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown'
     const { error } = await supabase
       .from('exhibitions')
-      .delete()
+      .update({
+        status: 'archived',
+        archived_at: new Date().toISOString(),
+        archived_by_user_id: user.id,
+        archived_by_email: user.email,
+        archived_by_ip: ip,
+      })
       .eq('id', id).eq('tenant_id', tenant.id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ success: true })
+  }
+
+  // Hard delete disabled — use archive instead
+  if (action === 'delete') {
+    return NextResponse.json({ error: 'Hard delete is disabled. Use archive instead.' }, { status: 403 })
   }
 
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
