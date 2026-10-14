@@ -1,156 +1,288 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { Plus, Store, TrendingUp, TrendingDown } from 'lucide-react'
-import { Modal, useToast, EmptyState, Badge, LockedFeature } from '@/components/ui'
+
+import { useEffect, useState, useCallback } from 'react'
+import { Modal } from '@/components/ui'
 import NumInput from '@/components/NumInput'
 
+interface Exhibition {
+  id: string
+  name: string
+  location: string
+  start_date: string
+  end_date: string
+  stall_cost: number
+  other_expenses: number
+  status: string
+  notes: string
+  created_at: string
+  // computed from sales table:
+  total_sales: number
+}
+
+const STATUS_OPTIONS = ['upcoming', 'active', 'completed', 'cancelled']
+
+const EMPTY_FORM = {
+  name: '',
+  location: '',
+  start_date: '',
+  end_date: '',
+  stall_cost: 0,
+  other_expenses: 0,
+  status: 'upcoming',
+  notes: '',
+}
+
 export default function ExhibitionsPage() {
-  const [exhibitions, setExhibitions] = useState<any[]>([])
+  const [exhibitions, setExhibitions] = useState<Exhibition[]>([])
   const [loading, setLoading] = useState(true)
-  const [locked, setLocked] = useState(false)
-  const [modal, setModal] = useState(false)
-  const [form, setForm] = useState<any>({ status: 'upcoming', stall_cost: 0, other_expenses: 0, total_sales: 0 })
-  const { toast, ToastContainer } = useToast()
+  const [showModal, setShowModal] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [form, setForm] = useState({ ...EMPTY_FORM })
+  const [saving, setSaving] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  useEffect(() => { load() }, [])
-
-  const load = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true)
-    const data = await fetch('/api/exhibitions').then(r => r.json())
-    if (data?.locked) { setLocked(true); setLoading(false); return }
-    setExhibitions(Array.isArray(data) ? data : [])
+    const res = await fetch('/api/exhibitions')
+    const data = await res.json()
+    setExhibitions(data.exhibitions || [])
     setLoading(false)
+  }, [])
+
+  useEffect(() => { fetchAll() }, [fetchAll])
+
+  function openNew() {
+    setEditId(null)
+    setForm({ ...EMPTY_FORM })
+    setShowModal(true)
   }
 
-  const save = async () => {
-    if (!form.name) { toast('Exhibition name is required', 'error'); return }
-    const r = await fetch('/api/exhibitions', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save', ...form })
-    }).then(r => r.json())
-    if (r.error) { toast(r.error, 'error'); return }
-    toast('Exhibition saved!')
-    setModal(false)
-    load()
+  function openEdit(ex: Exhibition) {
+    setEditId(ex.id)
+    setForm({
+      name: ex.name,
+      location: ex.location || '',
+      start_date: ex.start_date ? ex.start_date.slice(0, 10) : '',
+      end_date: ex.end_date ? ex.end_date.slice(0, 10) : '',
+      stall_cost: ex.stall_cost || 0,
+      other_expenses: ex.other_expenses || 0,
+      status: ex.status || 'upcoming',
+      notes: ex.notes || '',
+    })
+    setShowModal(true)
   }
 
-  const statusColor: any = { upcoming: 'blue', active: 'green', completed: 'slate' }
+  async function save() {
+    if (!form.name.trim()) return alert('Exhibition name is required')
+    setSaving(true)
+    const body = editId
+      ? { action: 'update', id: editId, ...form }
+      : { action: 'create', ...form }
+    const res = await fetch('/api/exhibitions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    const data = await res.json()
+    setSaving(false)
+    if (data.error) return alert(data.error)
+    setShowModal(false)
+    fetchAll()
+  }
 
-  if (locked) return <LockedFeature feature="Exhibitions & P&L" plan="Pro" />
+  async function deleteExhibition(id: string) {
+    if (!confirm('Delete this exhibition? This cannot be undone.')) return
+    await fetch('/api/exhibitions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', id }),
+    })
+    fetchAll()
+  }
+
+  /* ── P&L for one exhibition ───────────────────────────────── */
+  function PnL({ ex }: { ex: Exhibition }) {
+    const totalCosts = (ex.stall_cost || 0) + (ex.other_expenses || 0)
+    const salesTotal = ex.total_sales || 0
+    const profit = salesTotal - totalCosts
+    const margin = salesTotal > 0 ? (profit / salesTotal) * 100 : 0
+
+    return (
+      <div className="mt-3 bg-slate-900 rounded-lg p-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+        <div>
+          <p className="text-slate-400 text-xs mb-1">Total Sales</p>
+          <p className="text-white font-semibold">₹{salesTotal.toFixed(2)}</p>
+          <p className="text-slate-500 text-xs mt-0.5">auto from sales module</p>
+        </div>
+        <div>
+          <p className="text-slate-400 text-xs mb-1">Total Costs</p>
+          <p className="text-white font-semibold">₹{totalCosts.toFixed(2)}</p>
+          <p className="text-slate-500 text-xs mt-0.5">stall + other expenses</p>
+        </div>
+        <div>
+          <p className="text-slate-400 text-xs mb-1">Profit / Loss</p>
+          <p className={`font-semibold ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {profit >= 0 ? '+' : ''}₹{profit.toFixed(2)}
+          </p>
+        </div>
+        <div>
+          <p className="text-slate-400 text-xs mb-1">Margin</p>
+          <p className={`font-semibold ${margin >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            {margin.toFixed(1)}%
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  /* ── status badge ─────────────────────────────────────────── */
+  function statusBadge(status: string) {
+    const map: Record<string, string> = {
+      upcoming: 'bg-blue-900 text-blue-300',
+      active: 'bg-green-900 text-green-300',
+      completed: 'bg-slate-700 text-slate-300',
+      cancelled: 'bg-red-900 text-red-300',
+    }
+    return (
+      <span className={`px-2 py-0.5 rounded text-xs font-medium ${map[status] || 'bg-slate-700 text-slate-300'}`}>
+        {status.charAt(0).toUpperCase() + status.slice(1)}
+      </span>
+    )
+  }
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <ToastContainer />
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Exhibitions</h1>
-        <button onClick={() => { setForm({ status: 'upcoming', stall_cost: 0, other_expenses: 0, total_sales: 0 }); setModal(true) }} className="btn-primary">
-          <Plus className="w-4 h-4" /> Add Exhibition
-        </button>
+    <div className="p-6 space-y-6">
+      {/* header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Exhibitions</h1>
+          <p className="text-slate-400 text-sm mt-1">Track exhibition costs & P&L — sales auto-aggregate from the Sales module</p>
+        </div>
+        <button onClick={openNew} className="btn-primary">+ New Exhibition</button>
       </div>
 
-      {exhibitions.length === 0 && !loading ? (
-        <EmptyState icon={<Store className="w-6 h-6" />} title="No exhibitions yet" description="Track your exhibition P&L — stall cost, expenses, and sales" action={<button onClick={() => setModal(true)} className="btn-primary">Add Exhibition</button>} />
+      {/* list */}
+      {loading ? (
+        <div className="text-slate-400">Loading...</div>
+      ) : exhibitions.length === 0 ? (
+        <div className="card text-center py-12 text-slate-400">No exhibitions yet.</div>
       ) : (
-        <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-4">
           {exhibitions.map(ex => {
-            const costs = Number(ex.stall_cost) + Number(ex.other_expenses)
-            const profit = Number(ex.total_sales) - costs
-            const roi = costs > 0 ? (profit / costs * 100) : 0
+            const totalCosts = (ex.stall_cost || 0) + (ex.other_expenses || 0)
+            const salesTotal = ex.total_sales || 0
+            const profit = salesTotal - totalCosts
+
             return (
-              <div key={ex.id} className="card p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <div className="font-semibold text-white">{ex.name}</div>
-                    <div className="text-slate-400 text-sm">{ex.venue && `${ex.venue}, `}{ex.city}</div>
-                  </div>
-                  <Badge color={statusColor[ex.status]}>{ex.status}</Badge>
-                </div>
-                <div className="text-xs text-slate-500 mb-4">
-                  {ex.start_date && new Date(ex.start_date).toLocaleDateString('en-IN')}
-                  {ex.end_date && ` — ${new Date(ex.end_date).toLocaleDateString('en-IN')}`}
-                </div>
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  <div className="bg-slate-800/50 rounded-lg p-3 text-center">
-                    <div className="text-xs text-slate-400 mb-1">Revenue</div>
-                    <div className="font-bold text-green-400 text-sm">₹{Number(ex.total_sales).toLocaleString('en-IN')}</div>
-                  </div>
-                  <div className="bg-slate-800/50 rounded-lg p-3 text-center">
-                    <div className="text-xs text-slate-400 mb-1">Costs</div>
-                    <div className="font-bold text-red-400 text-sm">₹{costs.toLocaleString('en-IN')}</div>
-                  </div>
-                  <div className={`rounded-lg p-3 text-center ${profit >= 0 ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
-                    <div className="text-xs text-slate-400 mb-1">P&L</div>
-                    <div className={`font-bold text-sm flex items-center justify-center gap-1 ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {profit >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                      ₹{Math.abs(profit).toLocaleString('en-IN')}
+              <div key={ex.id} className="card">
+                {/* top row */}
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <h2 className="text-white font-semibold text-lg">{ex.name}</h2>
+                      {statusBadge(ex.status)}
+                      <span className={`text-sm font-medium ${profit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {profit >= 0 ? '↑' : '↓'} ₹{Math.abs(profit).toFixed(0)}
+                      </span>
                     </div>
+                    {ex.location && <p className="text-slate-400 text-sm mt-0.5">📍 {ex.location}</p>}
+                    {(ex.start_date || ex.end_date) && (
+                      <p className="text-slate-500 text-xs mt-0.5">
+                        {ex.start_date ? new Date(ex.start_date).toLocaleDateString('en-IN') : ''}{' '}
+                        {ex.end_date ? `→ ${new Date(ex.end_date).toLocaleDateString('en-IN')}` : ''}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={() => setExpandedId(expandedId === ex.id ? null : ex.id)}
+                      className="text-xs text-blue-400 hover:text-blue-300">
+                      {expandedId === ex.id ? 'Hide P&L' : 'View P&L'}
+                    </button>
+                    <button onClick={() => openEdit(ex)} className="text-xs text-slate-400 hover:text-white">Edit</button>
+                    <button onClick={() => deleteExhibition(ex.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
                   </div>
                 </div>
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <span>Stall: ₹{Number(ex.stall_cost).toLocaleString('en-IN')} · Other: ₹{Number(ex.other_expenses).toLocaleString('en-IN')}</span>
-                  <span className={roi >= 0 ? 'text-green-400' : 'text-red-400'}>ROI: {roi.toFixed(1)}%</span>
+
+                {/* summary chips */}
+                <div className="flex flex-wrap gap-3 mt-3 text-xs text-slate-400">
+                  <span>Stall: <span className="text-white">₹{(ex.stall_cost || 0).toFixed(0)}</span></span>
+                  <span>Other: <span className="text-white">₹{(ex.other_expenses || 0).toFixed(0)}</span></span>
+                  <span>Sales: <span className="text-purple-300">₹{salesTotal.toFixed(0)}</span></span>
                 </div>
-                <button
-                  onClick={() => { setForm({ ...ex, stall_cost: ex.stall_cost || 0, other_expenses: ex.other_expenses || 0, total_sales: ex.total_sales || 0 }); setModal(true) }}
-                  className="mt-3 text-xs text-blue-400 hover:text-blue-300"
-                >Edit</button>
+
+                {/* expanded P&L */}
+                {expandedId === ex.id && <PnL ex={ex} />}
               </div>
             )
           })}
         </div>
       )}
 
-      <Modal open={modal} onClose={() => setModal(false)} title={form.id ? 'Edit Exhibition' : 'Add Exhibition'} size="md">
-        <div className="p-6 grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Exhibition Name *</label>
-            <input value={form.name || ''} onChange={e => setForm((f: any) => ({ ...f, name: e.target.value }))} className="input-base" placeholder="e.g. Pune Craft Festival 2025" />
-          </div>
+      {/* ── MODAL ─────────────────────────────────────────────── */}
+      <Modal open={showModal} onClose={() => setShowModal(false)}
+        title={editId ? 'Edit Exhibition' : 'New Exhibition'} allowBackdropClose={false}>
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Venue</label>
-            <input value={form.venue || ''} onChange={e => setForm((f: any) => ({ ...f, venue: e.target.value }))} className="input-base" />
+            <label className="label-base">Exhibition Name *</label>
+            <input className="input-base" placeholder="e.g. Diwali Mela 2026"
+              value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">City</label>
-            <input value={form.city || ''} onChange={e => setForm((f: any) => ({ ...f, city: e.target.value }))} className="input-base" />
+            <label className="label-base">Location</label>
+            <input className="input-base" placeholder="City / Venue"
+              value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Start Date</label>
-            <input type="date" value={form.start_date || ''} onChange={e => setForm((f: any) => ({ ...f, start_date: e.target.value }))} className="input-base" />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label-base">Start Date</label>
+              <input type="date" className="input-base" value={form.start_date}
+                onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} />
+            </div>
+            <div>
+              <label className="label-base">End Date</label>
+              <input type="date" className="input-base" value={form.end_date}
+                onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">End Date</label>
-            <input type="date" value={form.end_date || ''} onChange={e => setForm((f: any) => ({ ...f, end_date: e.target.value }))} className="input-base" />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label-base">Stall Cost (₹)</label>
+              <NumInput value={form.stall_cost} onChange={v => setForm(f => ({ ...f, stall_cost: v }))} placeholder="0" />
+            </div>
+            <div>
+              <label className="label-base">Other Expenses (₹)</label>
+              <NumInput value={form.other_expenses} onChange={v => setForm(f => ({ ...f, other_expenses: v }))} placeholder="0" />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Stall Cost (₹)</label>
-            {/* FIX: NumInput replaces value={form.stall_cost || 0} */}
-            <NumInput value={form.stall_cost} onChange={v => setForm((f: any) => ({ ...f, stall_cost: v }))} />
+
+          {/* NOTE: total_sales is no longer manual — it's auto-calculated from the sales table */}
+          <div className="bg-slate-800 rounded-lg px-3 py-2 text-xs text-purple-400">
+            💡 Total Sales will be automatically calculated from all sales tagged to this exhibition in the Sales module. No manual entry needed.
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Other Expenses (₹)</label>
-            <NumInput value={form.other_expenses} onChange={v => setForm((f: any) => ({ ...f, other_expenses: v }))} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Total Sales (₹)</label>
-            <NumInput value={form.total_sales} onChange={v => setForm((f: any) => ({ ...f, total_sales: v }))} />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Status</label>
-            <select value={form.status || 'upcoming'} onChange={e => setForm((f: any) => ({ ...f, status: e.target.value }))} className="input-base">
-              <option value="upcoming">Upcoming</option>
-              <option value="active">Active</option>
-              <option value="completed">Completed</option>
+            <label className="label-base">Status</label>
+            <select className="input-base" value={form.status}
+              onChange={e => setForm(f => ({ ...f, status: e.target.value }))}>
+              {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
           </div>
-          <div className="col-span-2">
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Notes</label>
-            <textarea value={form.notes || ''} onChange={e => setForm((f: any) => ({ ...f, notes: e.target.value }))} className="input-base" rows={2} />
+
+          <div>
+            <label className="label-base">Notes</label>
+            <textarea className="input-base" rows={2} placeholder="Any notes..."
+              value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
-        </div>
-        <div className="px-6 pb-6 flex justify-end gap-3">
-          <button onClick={() => setModal(false)} className="btn-secondary">Cancel</button>
-          <button onClick={save} className="btn-primary">{form.id ? 'Update' : 'Add'} Exhibition</button>
+
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => setShowModal(false)} className="btn-secondary flex-1">Cancel</button>
+            <button onClick={save} disabled={saving} className="btn-primary flex-1 disabled:opacity-50">
+              {saving ? 'Saving...' : editId ? 'Update' : 'Create'}
+            </button>
+          </div>
         </div>
       </Modal>
     </div>
