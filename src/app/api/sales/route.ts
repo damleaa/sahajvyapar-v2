@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabase
     .from('sales')
-    .select('*, sale_items(id, product_name, quantity, unit_price, total_price)')
+    .select('*, sale_items(id, product_name, quantity, unit_price, total_price), exhibitions(name)')
     .eq('tenant_id', tenant.id)
     .order('created_at', { ascending: false })
     .limit(100)
@@ -39,6 +39,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json((data || []).map((s: any) => ({
     ...s,
     items: s.sale_items || [],
+    exhibition_name: s.exhibitions?.name || null,
   })))
 }
 
