@@ -74,7 +74,7 @@ export default function SalesPage() {
     setLoading(true)
     const [salesRes, productsRes, customersRes, exhibitionsRes] = await Promise.all([
       fetch('/api/sales'),
-      fetch('/api/products'),
+      fetch('/api/inventory'),
       fetch('/api/customers'),
       fetch('/api/exhibitions'),
     ])
@@ -86,7 +86,7 @@ export default function SalesPage() {
     ])
     // Handle both plain array and wrapped { sales: [] } response formats
     setSales(Array.isArray(salesData) ? salesData : (salesData.sales || []))
-    setProducts(Array.isArray(productsData) ? productsData : (productsData.products || []))
+    setProducts(Array.isArray(productsData) ? productsData : (productsData.products || productsData.inventory || []))
     setCustomers(Array.isArray(customersData) ? customersData : (customersData.customers || []))
     // Only show active + completed exhibitions in dropdown (not upcoming)
     const activeExhibitions = (exhibitionsData.exhibitions || []).filter(
