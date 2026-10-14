@@ -35,7 +35,11 @@ export async function GET(req: NextRequest) {
   }
 
   const { data } = await query
-  return NextResponse.json(data || [])
+  // Map sale_items -> items so the frontend Sale interface works correctly
+  return NextResponse.json((data || []).map((s: any) => ({
+    ...s,
+    items: s.sale_items || [],
+  })))
 }
 
 export async function POST(req: NextRequest) {
@@ -71,6 +75,8 @@ export async function POST(req: NextRequest) {
       tenant_id: tenant.id,
       customer_id: saleData.customer_id || null,
       customer_name: saleData.customer_name || 'Walk-in Customer',
+      sale_date: saleData.sale_date || new Date().toISOString().split('T')[0],
+      exhibition_id: saleData.exhibition_id || null,
       invoice_number: invoiceNumber,
       invoice_serial: invoiceNumber,
       total_amount: total,
@@ -137,7 +143,6 @@ export async function POST(req: NextRequest) {
       const paid = Number(saleData.partial_amount)
       const balance = Math.max(0, final - paid)
 
-      // Record the first tranche
       await supabase.from('sale_payments').insert({
         sale_id: sale.id,
         tenant_id: tenant.id,
@@ -146,7 +151,6 @@ export async function POST(req: NextRequest) {
         note: `Tranche 1 for ${invoiceNumber}`,
       })
 
-      // Set outstanding balance on customer if linked
       if (saleData.customer_id && balance > 0) {
         const { data: cust } = await supabase
           .from('customers').select('credit_balance').eq('id', saleData.customer_id).single()
@@ -179,7 +183,6 @@ export async function POST(req: NextRequest) {
 
     if (fetchErr || !sale) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
 
-    // Sum existing payments + this one
     const { data: existingPayments } = await supabase
       .from('sale_payments').select('amount').eq('sale_id', sale_id)
 
@@ -187,7 +190,6 @@ export async function POST(req: NextRequest) {
     const saleTotal = Number(sale.final_amount)
     const newStatus = totalPaid >= saleTotal ? 'paid' : 'partial'
 
-    // Insert payment record
     const { error: payErr } = await supabase.from('sale_payments').insert({
       sale_id,
       tenant_id: tenant.id,
@@ -200,14 +202,12 @@ export async function POST(req: NextRequest) {
       console.warn('sale_payments insert failed (table may not exist yet):', payErr.message)
     }
 
-    // Update sale status
     await supabase
       .from('sales')
       .update({ payment_status: newStatus, payment_method: method || 'cash' })
       .eq('id', sale_id)
       .eq('tenant_id', tenant.id)
 
-    // Reduce customer credit balance
     if (sale.customer_id) {
       const { data: cust } = await supabase
         .from('customers').select('credit_balance').eq('id', sale.customer_id).single()
