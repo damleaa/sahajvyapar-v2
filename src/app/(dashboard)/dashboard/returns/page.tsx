@@ -17,25 +17,36 @@ interface DeductionRule {
 }
 
 interface TimeTier {
-  days_after: number   // if return is after this many days from sale date...
-  percentage: number   // ...deduct this %
+  days_after: number
+  percentage: number
+}
+
+interface SaleItem {
+  id: string
+  product_id: string
+  product_name: string
+  quantity: number
+  unit_price: number
+  total_price: number
+}
+
+interface ReturnItem extends SaleItem {
+  returned_qty: number
 }
 
 interface Return {
   id: string
-  invoice_number: string
+  return_number: string
   customer_name: string
-  product_name: string
-  quantity: number
-  return_amount: number
-  deduction_type?: string
-  deduction_amount?: number
-  refund_amount?: number
-  deduction_note?: string
   reason: string
+  total_amount: number
+  deduction_amount: number
+  deduction_note: string
+  refund_amount: number
+  refund_status: string
   status: string
   created_at: string
-  sale_date?: string
+  return_items: { product_name: string; returned_qty: number; unit_price: number }[]
 }
 
 const EMPTY_RULE_FORM = {
@@ -47,17 +58,6 @@ const EMPTY_RULE_FORM = {
   is_active: true,
 }
 
-const EMPTY_RETURN_FORM = {
-  invoice_number: '',
-  customer_name: '',
-  product_name: '',
-  quantity: 1,
-  return_amount: 0,
-  reason: '',
-  deduction_rule_id: '',
-  sale_date: '',
-}
-
 export default function ReturnsPage() {
   const [returns, setReturns] = useState<Return[]>([])
   const [rules, setRules] = useState<DeductionRule[]>([])
@@ -66,8 +66,17 @@ export default function ReturnsPage() {
 
   // return modal
   const [showReturnModal, setShowReturnModal] = useState(false)
-  const [returnForm, setReturnForm] = useState({ ...EMPTY_RETURN_FORM })
+  const [invoiceInput, setInvoiceInput] = useState('')
+  const [fetchingItems, setFetchingItems] = useState(false)
+  const [fetchError, setFetchError] = useState('')
+  const [saleId, setSaleId] = useState('')
+  const [saleDate, setSaleDate] = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const [returnItems, setReturnItems] = useState<ReturnItem[]>([])
+  const [reason, setReason] = useState('')
+  const [deductionRuleId, setDeductionRuleId] = useState('')
   const [returnSaving, setReturnSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   // rule modal
   const [showRuleModal, setShowRuleModal] = useState(false)
@@ -82,75 +91,129 @@ export default function ReturnsPage() {
       fetch('/api/return-rules'),
     ])
     const [retData, rulesData] = await Promise.all([retRes.json(), rulesRes.json()])
-    setReturns(retData.returns || [])
+    setReturns(retData.returns || retData || [])
     setRules(rulesData.rules || [])
     setLoading(false)
   }, [])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  /* ── compute deduction preview ────────────────────────────── */
-  function computeDeduction(returnAmount: number, ruleid: string, saleDate: string): { type: string; amount: number; note: string } {
-    const rule = rules.find(r => r.id === ruleid)
-    if (!rule) return { type: '', amount: 0, note: '' }
+  /* ── fetch sale items by invoice number ───────────────────── */
+  async function fetchSaleItems() {
+    if (!invoiceInput.trim()) return
+    setFetchingItems(true)
+    setFetchError('')
+    setReturnItems([])
+    setSaleId('')
+    setSaleDate('')
+    setCustomerName('')
 
-    if (rule.rule_type === 'flat') {
-      return { type: 'flat', amount: rule.flat_amount || 0, note: `Flat deduction: ₹${rule.flat_amount}` }
+    // Search sales by invoice number
+    const res = await fetch(`/api/sales?search=${encodeURIComponent(invoiceInput.trim())}`)
+    const data = await res.json()
+    const sales = Array.isArray(data) ? data : []
+    const sale = sales.find((s: any) =>
+      s.invoice_number?.toLowerCase() === invoiceInput.trim().toLowerCase()
+    )
+
+    if (!sale) {
+      setFetchError('Invoice not found. Please check the number and try again.')
+      setFetchingItems(false)
+      return
     }
 
-    if (rule.rule_type === 'percentage') {
-      const amt = (returnAmount * (rule.percentage || 0)) / 100
-      return { type: 'percentage', amount: amt, note: `${rule.percentage}% deduction` }
-    }
+    setSaleId(sale.id)
+    setSaleDate(sale.sale_date || sale.created_at?.split('T')[0] || '')
+    setCustomerName(sale.customer_name || 'Walk-in Customer')
 
-    if (rule.rule_type === 'time_based' && saleDate && rule.time_tiers) {
-      const daysDiff = Math.floor((Date.now() - new Date(saleDate).getTime()) / (1000 * 60 * 60 * 24))
-      // Find the highest tier where days_after <= daysDiff (sorted desc)
-      const sorted = [...rule.time_tiers].sort((a, b) => b.days_after - a.days_after)
-      const tier = sorted.find(t => daysDiff >= t.days_after)
-      if (!tier) return { type: 'time_based', amount: 0, note: 'No deduction (within free return window)' }
-      const amt = (returnAmount * tier.percentage) / 100
-      return {
-        type: 'time_based',
-        amount: amt,
-        note: `${tier.percentage}% deduction (return after ${tier.days_after} days — ${daysDiff} days since sale)`,
-      }
-    }
-
-    return { type: '', amount: 0, note: '' }
+    // Fetch sale items
+    const itemsRes = await fetch('/api/returns', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sale_items', sale_id: sale.id }),
+    })
+    const items: SaleItem[] = await itemsRes.json()
+    setReturnItems(items.map(i => ({ ...i, returned_qty: 0 })))
+    setFetchingItems(false)
   }
 
-  // live deduction preview for current return form
-  const deductionPreview = returnForm.deduction_rule_id
-    ? computeDeduction(returnForm.return_amount, returnForm.deduction_rule_id, returnForm.sale_date)
-    : null
-  const refundAmount = returnForm.return_amount - (deductionPreview?.amount || 0)
+  function openReturnModal() {
+    setInvoiceInput('')
+    setFetchError('')
+    setSaleId('')
+    setSaleDate('')
+    setCustomerName('')
+    setReturnItems([])
+    setReason('')
+    setDeductionRuleId('')
+    setSaveError('')
+    setShowReturnModal(true)
+  }
+
+  /* ── compute deduction ────────────────────────────────────── */
+  function computeDeduction(returnAmount: number, ruleId: string, saleDt: string) {
+    const rule = rules.find(r => r.id === ruleId)
+    if (!rule) return { amount: 0, note: '' }
+
+    if (rule.rule_type === 'flat') {
+      return { amount: rule.flat_amount || 0, note: `Flat deduction: ₹${rule.flat_amount}` }
+    }
+    if (rule.rule_type === 'percentage') {
+      const amt = (returnAmount * (rule.percentage || 0)) / 100
+      return { amount: amt, note: `${rule.percentage}% deduction` }
+    }
+    if (rule.rule_type === 'time_based' && saleDt && rule.time_tiers) {
+      const daysDiff = Math.floor((Date.now() - new Date(saleDt).getTime()) / 86400000)
+      const sorted = [...rule.time_tiers].sort((a, b) => b.days_after - a.days_after)
+      const tier = sorted.find(t => daysDiff >= t.days_after)
+      if (!tier) return { amount: 0, note: 'No deduction (within free return window)' }
+      const amt = (returnAmount * tier.percentage) / 100
+      return { amount: amt, note: `${tier.percentage}% deduction (${daysDiff} days since sale)` }
+    }
+    return { amount: 0, note: '' }
+  }
+
+  const selectedItems = returnItems.filter(i => i.returned_qty > 0)
+  const returnTotal = selectedItems.reduce((s, i) => s + i.returned_qty * i.unit_price, 0)
+  const deduction = deductionRuleId ? computeDeduction(returnTotal, deductionRuleId, saleDate) : { amount: 0, note: '' }
+  const refundAmount = Math.max(0, returnTotal - deduction.amount)
 
   /* ── save return ──────────────────────────────────────────── */
   async function saveReturn() {
-    if (!returnForm.customer_name && !returnForm.invoice_number) return alert('Enter invoice number or customer name')
-    if (!returnForm.return_amount) return alert('Enter return amount')
+    if (!saleId) return setSaveError('Please fetch a sale first')
+    if (selectedItems.length === 0) return setSaveError('Select at least one item to return')
     setReturnSaving(true)
-    const body = {
-      action: 'create',
-      ...returnForm,
-      deduction_type: deductionPreview?.type || null,
-      deduction_amount: deductionPreview?.amount || 0,
-      deduction_note: deductionPreview?.note || null,
-      refund_amount: refundAmount,
-    }
+    setSaveError('')
+
     const res = await fetch('/api/returns', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'create',
+        sale_id: saleId,
+        reason,
+        deduction_rule_id: deductionRuleId || null,
+        deduction_type: deductionRuleId ? rules.find(r => r.id === deductionRuleId)?.rule_type : null,
+        deduction_amount: deduction.amount,
+        deduction_note: deduction.note || null,
+        refund_amount: refundAmount,
+        items: selectedItems.map(i => ({
+          sale_item_id: i.id,
+          product_id: i.product_id,
+          product_name: i.product_name,
+          returned_qty: i.returned_qty,
+          unit_price: i.unit_price,
+        })),
+      }),
     })
     const data = await res.json()
     setReturnSaving(false)
-    if (data.error) return alert(data.error)
+    if (data.error) return setSaveError(data.error)
     setShowReturnModal(false)
-    setReturnForm({ ...EMPTY_RETURN_FORM })
     fetchAll()
   }
 
-  /* ── save deduction rule ──────────────────────────────────── */
+  /* ── deduction rule CRUD ──────────────────────────────────── */
   async function saveRule() {
     if (!ruleForm.name.trim()) return alert('Rule name is required')
     setRuleSaving(true)
@@ -195,7 +258,6 @@ export default function ReturnsPage() {
     fetchAll()
   }
 
-  /* ── tier helpers ─────────────────────────────────────────── */
   function addTier() {
     setRuleForm(f => ({ ...f, time_tiers: [...(f.time_tiers || []), { days_after: 0, percentage: 0 }] }))
   }
@@ -233,9 +295,7 @@ export default function ReturnsPage() {
             <button onClick={openNewRule} className="btn-secondary text-sm">+ New Rule</button>
           )}
           {activeTab === 'returns' && (
-            <button onClick={() => { setReturnForm({ ...EMPTY_RETURN_FORM }); setShowReturnModal(true) }} className="btn-primary">
-              + New Return
-            </button>
+            <button onClick={openReturnModal} className="btn-primary">+ New Return</button>
           )}
         </div>
       </div>
@@ -256,43 +316,57 @@ export default function ReturnsPage() {
       {activeTab === 'returns' && (
         loading ? <div className="text-slate-400">Loading...</div> :
         returns.length === 0 ? (
-          <div className="card text-center py-12 text-slate-400">No returns recorded yet.</div>
+          <div className="card text-center py-16">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center">
+                <svg className="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              </div>
+              <p className="text-white font-medium">No returns recorded yet</p>
+              <p className="text-slate-500 text-sm">Record a return by fetching a sale invoice</p>
+              <button onClick={openReturnModal} className="btn-primary mt-2">+ New Return</button>
+            </div>
+          </div>
         ) : (
           <div className="card overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-slate-700 text-slate-400">
-                  <th className="text-left pb-3 pr-4">Invoice / Customer</th>
-                  <th className="text-left pb-3 pr-4">Product</th>
-                  <th className="text-right pb-3 pr-4">Return Amt</th>
-                  <th className="text-right pb-3 pr-4">Deduction</th>
-                  <th className="text-right pb-3 pr-4">Refund</th>
-                  <th className="text-left pb-3 pr-4">Reason</th>
-                  <th className="text-left pb-3">Date</th>
+                <tr className="border-b border-slate-800">
+                  {['Return #', 'Customer', 'Items', 'Return Amt', 'Deduction', 'Refund', 'Status', 'Date'].map(h => (
+                    <th key={h} className="text-left px-4 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                  ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700/50">
+              <tbody className="divide-y divide-slate-800">
                 {returns.map(ret => (
-                  <tr key={ret.id} className="hover:bg-slate-700/20">
-                    <td className="py-3 pr-4">
-                      <div className="text-blue-400 font-mono text-xs">{ret.invoice_number}</div>
-                      <div className="text-white text-xs">{ret.customer_name}</div>
+                  <tr key={ret.id} className="hover:bg-slate-800/30 transition-colors">
+                    <td className="px-4 py-3.5 font-mono text-xs text-blue-400">{ret.return_number}</td>
+                    <td className="px-4 py-3.5 text-slate-300 text-sm">{ret.customer_name}</td>
+                    <td className="px-4 py-3.5 text-slate-400 text-xs">
+                      {(ret.return_items || []).map((i, idx) => (
+                        <div key={idx}>{i.product_name} × {i.returned_qty}</div>
+                      ))}
                     </td>
-                    <td className="py-3 pr-4 text-slate-300">{ret.product_name} × {ret.quantity}</td>
-                    <td className="py-3 pr-4 text-right text-white">₹{Number(ret.return_amount).toFixed(2)}</td>
-                    <td className="py-3 pr-4 text-right">
-                      {ret.deduction_amount ? (
-                        <span className="text-red-400">-₹{Number(ret.deduction_amount).toFixed(2)}</span>
-                      ) : <span className="text-slate-600">—</span>}
-                      {ret.deduction_note && (
-                        <div className="text-slate-500 text-xs">{ret.deduction_note}</div>
-                      )}
+                    <td className="px-4 py-3.5 text-white">₹{Number(ret.total_amount).toLocaleString('en-IN')}</td>
+                    <td className="px-4 py-3.5">
+                      {ret.deduction_amount > 0
+                        ? <span className="text-red-400">-₹{Number(ret.deduction_amount).toLocaleString('en-IN')}</span>
+                        : <span className="text-slate-600">—</span>}
                     </td>
-                    <td className="py-3 pr-4 text-right text-green-400 font-medium">
-                      ₹{Number(ret.refund_amount ?? ret.return_amount).toFixed(2)}
+                    <td className="px-4 py-3.5 text-green-400 font-semibold">
+                      ₹{Number(ret.refund_amount ?? ret.total_amount).toLocaleString('en-IN')}
                     </td>
-                    <td className="py-3 pr-4 text-slate-400 text-xs">{ret.reason}</td>
-                    <td className="py-3 text-slate-500 text-xs">{new Date(ret.created_at).toLocaleDateString('en-IN')}</td>
+                    <td className="px-4 py-3.5">
+                      <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        ret.status === 'completed' ? 'bg-green-900 text-green-300' :
+                        ret.status === 'cancelled' ? 'bg-red-900 text-red-300' :
+                        'bg-amber-900 text-amber-300'
+                      }`}>{ret.status}</span>
+                    </td>
+                    <td className="px-4 py-3.5 text-slate-500 text-xs">
+                      {new Date(ret.created_at).toLocaleDateString('en-IN')}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -324,17 +398,11 @@ export default function ReturnsPage() {
                       {rule.rule_type === 'flat' && `Deduct ₹${rule.flat_amount} flat from every return`}
                       {rule.rule_type === 'percentage' && `Deduct ${rule.percentage}% from return amount`}
                       {rule.rule_type === 'time_based' && rule.time_tiers && (
-                        <span>
-                          Time-based tiers:{' '}
-                          {[...rule.time_tiers]
-                            .sort((a, b) => a.days_after - b.days_after)
-                            .map(t => `${t.percentage}% after ${t.days_after}d`)
-                            .join(' · ')}
-                        </span>
+                        <span>Time-based: {[...rule.time_tiers].sort((a, b) => a.days_after - b.days_after).map(t => `${t.percentage}% after ${t.days_after}d`).join(' · ')}</span>
                       )}
                     </div>
                   </div>
-                  <div className="flex gap-2 shrink-0">
+                  <div className="flex gap-3 shrink-0">
                     <button onClick={() => openEditRule(rule)} className="text-xs text-slate-400 hover:text-white">Edit</button>
                     <button onClick={() => deleteRule(rule.id)} className="text-xs text-red-400 hover:text-red-300">Delete</button>
                   </div>
@@ -347,94 +415,161 @@ export default function ReturnsPage() {
 
       {/* ── NEW RETURN MODAL ──────────────────────────────────── */}
       <Modal open={showReturnModal} onClose={() => setShowReturnModal(false)} title="Record Return" allowBackdropClose={false}>
-        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+        <div className="p-6 space-y-4 overflow-y-auto" style={{ maxHeight: 'calc(80vh - 130px)' }}>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label-base">Invoice #</label>
-              <input className="input-base" placeholder="INV-001" value={returnForm.invoice_number}
-                onChange={e => setReturnForm(f => ({ ...f, invoice_number: e.target.value }))} />
-            </div>
-            <div>
-              <label className="label-base">Sale Date</label>
-              <input type="date" className="input-base" value={returnForm.sale_date}
-                onChange={e => setReturnForm(f => ({ ...f, sale_date: e.target.value }))} />
-            </div>
-          </div>
-
+          {/* Step 1: Invoice lookup */}
           <div>
-            <label className="label-base">Customer Name</label>
-            <input className="input-base" placeholder="Customer name" value={returnForm.customer_name}
-              onChange={e => setReturnForm(f => ({ ...f, customer_name: e.target.value }))} />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label-base">Product Name</label>
-              <input className="input-base" placeholder="Product" value={returnForm.product_name}
-                onChange={e => setReturnForm(f => ({ ...f, product_name: e.target.value }))} />
+            <label className="label-base">Invoice Number</label>
+            <div className="flex gap-2">
+              <input
+                className="input-base flex-1"
+                placeholder="e.g. INV/2025-26/001"
+                value={invoiceInput}
+                onChange={e => setInvoiceInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && fetchSaleItems()}
+              />
+              <button
+                onClick={fetchSaleItems}
+                disabled={fetchingItems || !invoiceInput.trim()}
+                className="btn-primary disabled:opacity-40 whitespace-nowrap"
+              >
+                {fetchingItems ? 'Fetching...' : 'Fetch'}
+              </button>
             </div>
-            <div>
-              <label className="label-base">Qty Returned</label>
-              <NumInput value={returnForm.quantity} onChange={v => setReturnForm(f => ({ ...f, quantity: v }))} min={1} placeholder="1" />
-            </div>
+            {fetchError && <p className="text-red-400 text-xs mt-1">{fetchError}</p>}
           </div>
 
-          <div>
-            <label className="label-base">Return Amount (₹)</label>
-            <NumInput value={returnForm.return_amount} onChange={v => setReturnForm(f => ({ ...f, return_amount: v }))} placeholder="0.00" />
-          </div>
-
-          <div>
-            <label className="label-base">Return Reason</label>
-            <input className="input-base" placeholder="e.g. Defective, Wrong size..." value={returnForm.reason}
-              onChange={e => setReturnForm(f => ({ ...f, reason: e.target.value }))} />
-          </div>
-
-          {/* Deduction rule */}
-          <div>
-            <label className="label-base">Deduction Rule (optional)</label>
-            <select className="input-base" value={returnForm.deduction_rule_id}
-              onChange={e => setReturnForm(f => ({ ...f, deduction_rule_id: e.target.value }))}>
-              <option value="">— No deduction (full refund) —</option>
-              {rules.filter(r => r.is_active).map(r => (
-                <option key={r.id} value={r.id}>{r.name} ({r.rule_type})</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Live deduction preview */}
-          {returnForm.return_amount > 0 && (
-            <div className="bg-slate-800 rounded-lg p-3 text-sm space-y-1">
-              <div className="flex justify-between text-slate-400">
-                <span>Return Amount</span><span>₹{returnForm.return_amount.toFixed(2)}</span>
+          {/* Step 2: Sale details + items */}
+          {returnItems.length > 0 && (
+            <>
+              <div className="bg-slate-800/60 rounded-lg px-4 py-3 text-sm">
+                <span className="text-slate-400">Customer: </span>
+                <span className="text-white font-medium">{customerName}</span>
+                {saleDate && (
+                  <span className="text-slate-500 ml-3 text-xs">
+                    Sale date: {new Date(saleDate).toLocaleDateString('en-IN')}
+                  </span>
+                )}
               </div>
-              {deductionPreview && deductionPreview.amount > 0 && (
-                <>
-                  <div className="flex justify-between text-red-400">
-                    <span>Deduction</span><span>-₹{deductionPreview.amount.toFixed(2)}</span>
+
+              <div>
+                <label className="label-base">Select Items to Return</label>
+                <div className="rounded-lg overflow-hidden border border-slate-700">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-800">
+                      <tr>
+                        <th className="text-left px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Product</th>
+                        <th className="text-center px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Sold</th>
+                        <th className="text-center px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Return Qty</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {returnItems.map((item, idx) => (
+                        <tr key={item.id} className="bg-slate-900/50">
+                          <td className="px-3 py-2 text-slate-200">{item.product_name}</td>
+                          <td className="px-3 py-2 text-center text-slate-400">{item.quantity}</td>
+                          <td className="px-3 py-2 text-center">
+                            <input
+                              type="number"
+                              min={0}
+                              max={item.quantity}
+                              value={item.returned_qty}
+                              onChange={e => {
+                                const val = Math.min(Number(e.target.value), item.quantity)
+                                setReturnItems(items => items.map((it, i) => i === idx ? { ...it, returned_qty: Math.max(0, val) } : it))
+                              }}
+                              className="w-16 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-center text-sm text-white"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right text-white">
+                            {item.returned_qty > 0
+                              ? `₹${(item.returned_qty * item.unit_price).toLocaleString('en-IN')}`
+                              : <span className="text-slate-600">—</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Step 3: Reason */}
+              <div>
+                <label className="label-base">Return Reason</label>
+                <input
+                  className="input-base"
+                  placeholder="e.g. Defective product, Wrong size..."
+                  value={reason}
+                  onChange={e => setReason(e.target.value)}
+                />
+              </div>
+
+              {/* Step 4: Deduction rule */}
+              <div>
+                <label className="label-base">Deduction Rule <span className="text-slate-500 font-normal">(optional)</span></label>
+                <select
+                  className="input-base"
+                  value={deductionRuleId}
+                  onChange={e => setDeductionRuleId(e.target.value)}
+                >
+                  <option value="">— No deduction (full refund) —</option>
+                  {rules.filter(r => r.is_active).map(r => (
+                    <option key={r.id} value={r.id}>{r.name} ({r.rule_type})</option>
+                  ))}
+                </select>
+                {rules.filter(r => r.is_active).length === 0 && (
+                  <p className="text-xs text-slate-500 mt-1">
+                    No active rules.{' '}
+                    <button onClick={() => { setShowReturnModal(false); setActiveTab('rules') }} className="text-blue-400 hover:underline">
+                      Configure deduction rules
+                    </button>
+                  </p>
+                )}
+              </div>
+
+              {/* Step 5: Summary preview */}
+              {returnTotal > 0 && (
+                <div className="bg-slate-800 rounded-lg p-3 text-sm space-y-1">
+                  <div className="flex justify-between text-slate-400">
+                    <span>Return Amount ({selectedItems.length} item{selectedItems.length !== 1 ? 's' : ''})</span>
+                    <span>₹{returnTotal.toLocaleString('en-IN')}</span>
                   </div>
-                  <div className="text-slate-500 text-xs">{deductionPreview.note}</div>
-                </>
+                  {deduction.amount > 0 && (
+                    <>
+                      <div className="flex justify-between text-red-400">
+                        <span>Deduction</span><span>-₹{deduction.amount.toFixed(2)}</span>
+                      </div>
+                      <div className="text-slate-500 text-xs">{deduction.note}</div>
+                    </>
+                  )}
+                  <div className="flex justify-between text-green-400 font-semibold border-t border-slate-700 pt-1 mt-1">
+                    <span>Refund Amount</span><span>₹{refundAmount.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
               )}
-              <div className="flex justify-between text-green-400 font-semibold border-t border-slate-700 pt-1">
-                <span>Refund Amount</span><span>₹{Math.max(0, refundAmount).toFixed(2)}</span>
-              </div>
-            </div>
+            </>
           )}
 
-          {rules.filter(r => r.is_active).length === 0 && (
-            <div className="text-xs text-slate-500">
-              No active deduction rules. Go to the{' '}
-              <button onClick={() => { setShowReturnModal(false); setActiveTab('rules') }}
-                className="text-blue-400 hover:underline">Deduction Rules tab</button>{' '}
-              to configure them.
-            </div>
+          {saveError && (
+            <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{saveError}</p>
           )}
+        </div>
 
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setShowReturnModal(false)} className="btn-secondary flex-1">Cancel</button>
-            <button onClick={saveReturn} disabled={returnSaving} className="btn-primary flex-1 disabled:opacity-50">
+        {/* Fixed footer */}
+        <div className="px-6 py-4 border-t border-slate-800 flex items-center justify-between">
+          <div className="text-sm text-slate-400">
+            {returnTotal > 0 && (
+              <span className="text-white font-semibold">Refund: ₹{refundAmount.toLocaleString('en-IN')}</span>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setShowReturnModal(false)} disabled={returnSaving} className="btn-secondary">Cancel</button>
+            <button
+              onClick={saveReturn}
+              disabled={returnSaving || selectedItems.length === 0}
+              className="btn-primary disabled:opacity-40"
+            >
               {returnSaving ? 'Saving...' : 'Record Return'}
             </button>
           </div>
@@ -444,7 +579,7 @@ export default function ReturnsPage() {
       {/* ── RULE MODAL ────────────────────────────────────────── */}
       <Modal open={showRuleModal} onClose={() => setShowRuleModal(false)}
         title={editRuleId ? 'Edit Rule' : 'New Deduction Rule'} allowBackdropClose={false}>
-        <div className="space-y-4">
+        <div className="p-6 space-y-4">
 
           <div>
             <label className="label-base">Rule Name *</label>
@@ -462,35 +597,27 @@ export default function ReturnsPage() {
             </select>
           </div>
 
-          {/* flat */}
           {ruleForm.rule_type === 'flat' && (
             <div>
               <label className="label-base">Deduction Amount (₹)</label>
               <NumInput value={ruleForm.flat_amount} onChange={v => setRuleForm(f => ({ ...f, flat_amount: v }))} placeholder="0" />
-              <p className="text-xs text-slate-500 mt-1">This fixed amount will be deducted from every return using this rule.</p>
             </div>
           )}
 
-          {/* percentage */}
           {ruleForm.rule_type === 'percentage' && (
             <div>
               <label className="label-base">Percentage (%)</label>
               <NumInput value={ruleForm.percentage} onChange={v => setRuleForm(f => ({ ...f, percentage: v }))} placeholder="0" max={100} />
-              <p className="text-xs text-slate-500 mt-1">This % of the return amount will be deducted.</p>
             </div>
           )}
 
-          {/* time_based */}
           {ruleForm.rule_type === 'time_based' && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="label-base">Deduction Tiers</label>
                 <button onClick={addTier} className="text-xs text-blue-400 hover:text-blue-300">+ Add Tier</button>
               </div>
-              <p className="text-xs text-slate-500 mb-2">
-                Set % deductions based on how many days after the sale date the return happens.
-                The highest matching tier is applied.
-              </p>
+              <p className="text-xs text-slate-500 mb-2">Highest matching tier is applied.</p>
               {(ruleForm.time_tiers || []).map((tier, idx) => (
                 <div key={idx} className="flex items-center gap-3 mb-2 bg-slate-800 rounded-lg p-3">
                   <div className="flex-1">
@@ -506,9 +633,6 @@ export default function ReturnsPage() {
                   )}
                 </div>
               ))}
-              <div className="text-xs text-slate-500 mt-1">
-                Example: 0% if returned within 7 days, 5% after 7 days, 10% after 30 days → add 3 tiers.
-              </div>
             </div>
           )}
 
@@ -516,7 +640,7 @@ export default function ReturnsPage() {
             <input type="checkbox" id="rule-active" checked={ruleForm.is_active}
               onChange={e => setRuleForm(f => ({ ...f, is_active: e.target.checked }))}
               className="accent-blue-500" />
-            <label htmlFor="rule-active" className="text-slate-300 text-sm">Active (available to select on returns)</label>
+            <label htmlFor="rule-active" className="text-slate-300 text-sm">Active</label>
           </div>
 
           <div className="flex gap-3 pt-2">
