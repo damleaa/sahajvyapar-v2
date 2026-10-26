@@ -37,6 +37,7 @@ interface SaleItem {
 
 interface Sale {
   id: string
+  invoice_number?: string          // ← added
   sale_date: string
   customer_id?: string
   customer_name?: string
@@ -284,7 +285,7 @@ export default function SalesPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-800">
-                {['Date', 'Customer', 'Exhibition', 'Items', 'Payment', 'Amount'].map(h => (
+                {['Invoice #', 'Date', 'Customer', 'Exhibition', 'Items', 'Payment', 'Amount'].map(h => (
                   <th key={h} className="text-left px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider last:text-right">{h}</th>
                 ))}
               </tr>
@@ -292,6 +293,11 @@ export default function SalesPage() {
             <tbody className="divide-y divide-slate-800">
               {filteredSales.map(sale => (
                 <tr key={sale.id} className="hover:bg-slate-800/30 transition-colors">
+                  <td className="px-5 py-3.5">
+                    <span className="font-mono text-xs text-blue-400">
+                      {sale.invoice_number || <span className="text-slate-600">—</span>}
+                    </span>
+                  </td>
                   <td className="px-5 py-3.5 text-slate-300 text-sm">
                     {new Date(sale.sale_date).toLocaleDateString('en-IN')}
                   </td>
