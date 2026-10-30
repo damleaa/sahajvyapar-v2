@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Modal } from '@/components/ui'
 import NumInput from '@/components/NumInput'
+import Link from 'next/link'
 
 interface Exhibition {
   id: string
@@ -158,7 +159,12 @@ export default function ExhibitionsPage() {
           <h1 className="text-2xl font-bold text-white">Exhibitions</h1>
           <p className="text-slate-400 text-sm mt-1">Track exhibition costs & P&L — sales auto-aggregate from the Sales module</p>
         </div>
-        <button onClick={openNew} className="btn-primary">+ New Exhibition</button>
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard/exhibitions/reports" className="btn-secondary text-sm">
+            Reports →
+          </Link>
+          <button onClick={openNew} className="btn-primary">+ New Exhibition</button>
+        </div>
       </div>
 
       {/* list */}

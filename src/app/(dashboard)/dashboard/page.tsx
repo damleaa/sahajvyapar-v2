@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { TrendingUp, Package, AlertTriangle, Users } from 'lucide-react'
 import Link from 'next/link'
+import ExhibitionWidgets from '@/components/ExhibitionWidgets'
 
 async function getDashboardData(tenantId: string) {
   const supabase = await createClient()
@@ -19,9 +20,6 @@ async function getDashboardData(tenantId: string) {
   const monthlyRevenue = salesRes.data?.reduce((s, sale) => s + Number(sale.final_amount), 0) || 0
   const creditOutstanding = customersRes.data?.reduce((s, c) => s + Number(c.credit_balance), 0) || 0
 
-  // Fix (f): Filter low stock IN JS — Supabase .filter('stock_quantity','lte','low_stock_alert')
-  // compares to the STRING 'low_stock_alert', not the column value.
-  // Correct approach: fetch all, filter client-side.
   const lowStockItems = allProducts
     .filter(p => Number(p.stock_quantity) <= Number(p.low_stock_alert))
     .slice(0, 8)
@@ -38,13 +36,13 @@ async function getDashboardData(tenantId: string) {
       monthly_revenue: monthlyRevenue,
       monthly_sales: salesRes.data?.length || 0,
       total_products: allProducts.length,
-      low_stock: lowStockItems.length,    // Now matches the list below
+      low_stock: lowStockItems.length,
       total_customers: customersRes.data?.length || 0,
       total_credit_outstanding: creditOutstanding,
       upcoming_exhibitions: exhibitionsRes.data?.length || 0,
     },
     recentSales: recentSales || [],
-    lowStockItems,   // Correct items matching the count
+    lowStockItems,
   }
 }
 
@@ -148,6 +146,11 @@ export default async function DashboardPage() {
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Exhibition Widgets */}
+      <div className="mt-6">
+        <ExhibitionWidgets />
       </div>
     </div>
   )

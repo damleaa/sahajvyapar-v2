@@ -420,12 +420,12 @@ export default function SalesPage() {
                 min={1}
                 value={qty}
                 onChange={e => setQty(Number(e.target.value))}
-                className="input-base w-16 text-center px-2"
+                className="input-base w-16 shrink-0 text-center px-2"
               />
               <button
                 onClick={addItem}
                 disabled={!selectedProduct}
-                className="btn-primary disabled:opacity-40 whitespace-nowrap"
+                className="btn-primary shrink-0 disabled:opacity-40 whitespace-nowrap"
               >
                 Add
               </button>
