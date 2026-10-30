@@ -32,7 +32,10 @@ export async function POST(req: NextRequest) {
   const { action, ...data } = body
 
   if (action === 'create') {
-    const { items, sale_id, reason } = data
+    const {
+      items, sale_id, reason,
+      deduction_rule_id, deduction_type, deduction_amount, deduction_note, refund_amount,
+    } = data
     const validItems = items.filter((i: any) => Number(i.returned_qty) > 0)
     if (!validItems.length) return NextResponse.json({ error: 'No items to return' }, { status: 400 })
 
@@ -42,11 +45,20 @@ export async function POST(req: NextRequest) {
     const { count } = await supabase.from('returns').select('id', { count: 'exact' }).eq('tenant_id', tenant.id)
     const returnNumber = `CN/2025-26/${String((count || 0) + 1).padStart(3, '0')}`
 
+    const deductAmt = Number(deduction_amount) || 0
+    const refundAmt = refund_amount !== undefined ? Number(refund_amount) : Math.max(0, total - deductAmt)
+
     const { data: ret, error } = await supabase.from('returns').insert({
       tenant_id: tenant.id, sale_id, customer_id: sale?.customer_id || null,
       customer_name: sale?.customer_name || 'Walk-in',
       return_number: returnNumber, reason: reason || null,
-      total_amount: total, refund_status: 'pending', status: 'initiated',
+      total_amount: total,
+      deduction_rule_id: deduction_rule_id || null,
+      deduction_type: deduction_type || null,
+      deduction_amount: deductAmt,
+      deduction_note: deduction_note || null,
+      refund_amount: refundAmt,
+      refund_status: 'pending', status: 'initiated',
     }).select().single()
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -69,7 +81,7 @@ export async function POST(req: NextRequest) {
     // Adjust credit balance if credit sale
     if (sale?.payment_status === 'pending' && sale?.customer_id) {
       const { data: cust } = await supabase.from('customers').select('credit_balance').eq('id', sale.customer_id).single()
-      const newBalance = Math.max(0, (cust?.credit_balance || 0) - total)
+      const newBalance = Math.max(0, (cust?.credit_balance || 0) - refundAmt)
       await supabase.from('customers').update({ credit_balance: newBalance }).eq('id', sale.customer_id)
     }
 
