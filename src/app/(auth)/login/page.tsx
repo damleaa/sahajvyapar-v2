@@ -34,7 +34,6 @@ export default function LoginPage() {
           <div className="inline-flex items-center gap-2.5 mb-3">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">S</div>
             <span className="text-white text-xl font-bold">SahajVyapar</span>
-            <span className="bg-amber-500 text-black text-xs font-bold px-1.5 py-0.5 rounded">BETA</span>
           </div>
           <p className="text-slate-400 text-sm">Inventory & Business Management</p>
         </div>
@@ -98,12 +97,6 @@ export default function LoginPage() {
           >
             New business? Start 7-day free trial →
           </Link>
-
-          <div className="mt-5 p-3 bg-amber-500/8 border border-amber-500/15 rounded-xl">
-            <p className="text-amber-400/80 text-xs text-center">
-              🔬 Beta version · Test environment · Dummy payments only
-            </p>
-          </div>
         </div>
 
         <div className="mt-4 flex justify-center gap-4">
