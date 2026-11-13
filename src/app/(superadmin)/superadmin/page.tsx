@@ -2,21 +2,31 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-const SUPERADMIN_PASSWORD = process.env.NEXT_PUBLIC_SUPERADMIN_KEY || 'SV@SuperAdmin2026'
-
 export default function SuperAdminLogin() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password === SUPERADMIN_PASSWORD) {
+    setLoading(true)
+    setError('')
+
+    // FIX #7: Validate password server-side, not in browser bundle
+    const res = await fetch('/api/admin/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+
+    if (res.ok) {
       sessionStorage.setItem('sv_admin_auth', 'true')
       router.push('/superadmin/dashboard')
     } else {
       setError('Invalid password')
     }
+    setLoading(false)
   }
 
   return (
@@ -34,7 +44,9 @@ export default function SuperAdminLogin() {
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Admin Password</label>
               <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-base" placeholder="••••••••" required autoFocus />
             </div>
-            <button type="submit" className="btn-primary w-full py-3">Access Admin Panel →</button>
+            <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+              {loading ? 'Verifying...' : 'Access Admin Panel →'}
+            </button>
           </form>
         </div>
       </div>

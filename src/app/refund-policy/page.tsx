@@ -23,7 +23,7 @@ export default function RefundPolicy() {
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px 80px' }}>
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'white', marginBottom: 8 }}>Refund & Cancellation Policy</h1>
-          <p style={{ color: '#64748b', fontSize: 13 }}>Last updated: 1 August 2026</p>
+          <p style={{ color: '#64748b', fontSize: 13 }}>Last updated: 13 November 2026</p>
         </div>
 
         {p('This policy governs refunds and cancellations for subscriptions to SahajVyapar, operated by Emotiquant Technologies OPC Pvt. Ltd.')}
@@ -34,7 +34,7 @@ export default function RefundPolicy() {
           <ul style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.7, paddingLeft: '1.25rem', margin: 0 }}>
             <li>7-day free trial — no charge, cancel anytime</li>
             <li>Cancel subscription — access until period ends, no partial refund</li>
-            <li>Technical failure preventing use — full refund within 7 days of payment</li>
+            <li>Technical failure preventing use — prorated refund for affected period (see details below)</li>
             <li>Duplicate charge — full refund within 5 business days</li>
             <li>Refund processing: 5–10 business days to original payment method</li>
           </ul>

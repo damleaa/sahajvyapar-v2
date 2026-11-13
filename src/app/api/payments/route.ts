@@ -26,8 +26,6 @@ async function razorpayFetch(endpoint: string) {
   } catch { return null }
 }
 
-const PLAN_PRICES: any = { starter: 399, growth: 699, pro: 999 }
-
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -51,7 +49,7 @@ export async function GET() {
 
   let payments: any[] = []
 
-  // Try Razorpay first if subscription ID exists
+  // Fetch real payments from Razorpay only
   if (tenant.razorpay_subscription_id) {
     const sixMonthsAgo = Math.floor(Date.now() / 1000) - (180 * 24 * 60 * 60)
     const data = await razorpayFetch(
@@ -71,36 +69,8 @@ export async function GET() {
     }
   }
 
-  // Fallback: build from DB if active/paid but no Razorpay records
-  // This handles test mode payments and cases where Razorpay API doesn't return records
-  if (payments.length === 0 && tenant.plan_status === 'active') {
-    const amount = PLAN_PRICES[tenant.plan] || 0
-    if (amount > 0) {
-      // Calculate how many months they've been active
-      const activeSince = new Date(tenant.created_at)
-      const now = new Date()
-      const monthsActive = Math.max(1,
-        (now.getFullYear() - activeSince.getFullYear()) * 12 +
-        (now.getMonth() - activeSince.getMonth()) + 1
-      )
-
-      // Generate one entry per month (up to 6)
-      const monthsToShow = Math.min(monthsActive, 6)
-      for (let i = 0; i < monthsToShow; i++) {
-        const payDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
-        payments.push({
-          id: tenant.payment_id || `sub_${tenant.id.slice(0,8)}_${i}`,
-          amount,
-          method: 'razorpay',
-          status: 'paid',
-          created_at: payDate.toISOString(),
-          plan: tenant.plan,
-        })
-      }
-    }
-  }
-
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0)
+  // No fabricated fallback rows — show empty with correct status messaging
+  const totalPaid = payments.reduce((sum: number, p: any) => sum + p.amount, 0)
 
   return NextResponse.json({
     payments,

@@ -4,9 +4,9 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 const PLAN_IDS: Record<string, string> = {
-  starter: process.env.RAZORPAY_PLAN_STARTER || 'plan_TMlnM2FDQdMa6h',
-  growth: process.env.RAZORPAY_PLAN_GROWTH || 'plan_TMloXZIHDd9U86',
-  pro: process.env.RAZORPAY_PLAN_PRO || 'plan_TMlp7WcudeUjQ1',
+  starter: process.env.RAZORPAY_PLAN_STARTER || 'plan_TRezg1wQxJx0V0',
+  growth: process.env.RAZORPAY_PLAN_GROWTH || 'plan_TRf0LpcAbFOU9c',
+  pro: process.env.RAZORPAY_PLAN_PRO || 'plan_TRf0seDjj0Io7D',
 }
 const PLAN_PRICES: Record<string, number> = { starter: 399, growth: 699, pro: 999 }
 
@@ -23,7 +23,6 @@ async function razorpayRequest(endpoint: string, method = 'GET', body?: any) {
   const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
   const secret = process.env.RAZORPAY_KEY_SECRET
 
-  // Guard against missing credentials
   if (!key || !secret || secret === 'your_razorpay_key_secret_here') {
     throw new Error('Razorpay credentials not configured. Please set RAZORPAY_KEY_SECRET in environment variables.')
   }
@@ -137,12 +136,17 @@ export async function POST(req: NextRequest) {
       await razorpayRequest(
         `subscriptions/${tenant.razorpay_subscription_id}/cancel`,
         'POST',
-        { cancel_at_cycle_end: 1 } // cancel at end of billing period
+        { cancel_at_cycle_end: 1 } // cancel at end of billing period — user keeps access till then
       )
-      await adminClient.from('tenants').update({ plan_status: 'cancelled' }).eq('id', tenant.id)
+
+      // FIX #5: Set 'cancelling' not 'cancelled' — access is still valid.
+      // The webhook's subscription.cancelled event will set it to 'cancelled'
+      // only when the period actually ends and Razorpay fires the event.
+      await adminClient.from('tenants').update({ plan_status: 'cancelling' }).eq('id', tenant.id)
+
       return NextResponse.json({
         success: true,
-        message: 'Subscription cancelled. You can use the app until your current period ends.'
+        message: 'Auto-renewal cancelled. You can use the app until your current period ends.',
       })
     } catch (err: any) {
       return NextResponse.json({ error: err.message }, { status: 500 })

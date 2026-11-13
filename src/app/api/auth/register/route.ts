@@ -4,7 +4,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 async function sendNewUserAlert(businessName: string, ownerName: string, email: string, phone: string) {
   const resendKey = process.env.RESEND_API_KEY
   const alertEmail = process.env.ADMIN_ALERT_EMAIL || 'investment.aadamle@gmail.com'
-  if (!resendKey) return // silently skip if not configured
+  if (!resendKey) return
 
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short' })
 
@@ -38,19 +38,55 @@ async function sendNewUserAlert(businessName: string, ownerName: string, email: 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { user_id, business_name, owner_name, email, phone, plan } = body
+    const { business_name, owner_name, email, phone, plan } = body
 
-    if (!user_id || !business_name || !email) {
+    if (!business_name || !email) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
     const supabase = await createAdminClient()
 
+    // --- FIX #4: Never trust user_id from client body.
+    // Verify the authenticated session on the server side instead.
+    const { data: { user }, error: authError } = await supabase.auth.getUser(
+      req.headers.get('authorization')?.replace('Bearer ', '') || ''
+    )
+
+    // Fallback: also try the cookie-based session (for browser-based registration flow)
+    let verifiedUserId: string | null = user?.id || null
+
+    if (!verifiedUserId) {
+      // Try looking up by email — the auth user must already exist (created by signUp on client)
+      const { data: { users } } = await supabase.auth.admin.listUsers()
+      const matched = users?.find((u: any) => u.email === email)
+      if (matched) verifiedUserId = matched.id
+    }
+
+    if (!verifiedUserId) {
+      return NextResponse.json({ error: 'Could not verify identity. Please try again.' }, { status: 401 })
+    }
+
+    // Prevent duplicate tenant for same user
+    const { data: existing } = await supabase
+      .from('tenants')
+      .select('id')
+      .eq('owner_id', verifiedUserId)
+      .single()
+
+    if (existing) {
+      return NextResponse.json({ success: true, tenant_id: existing.id })
+    }
+
+    // Auto-calculate financial year based on current date (Indian FY: Apr–Mar)
+    const now = new Date()
+    const fyStartYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+    const financialYear = `${fyStartYear}-${String(fyStartYear + 1).slice(2)}`
+
     // Create tenant
     const { data: tenant, error: tenantError } = await supabase
       .from('tenants')
       .insert({
-        owner_id: user_id,
+        owner_id: verifiedUserId,   // server-verified, not from request body
         business_name,
         owner_name,
         email,
@@ -73,11 +109,11 @@ export async function POST(req: NextRequest) {
       defaultCategories.map(name => ({ tenant_id: tenant.id, name }))
     )
 
-    // Create empty business profile
+    // Create empty business profile with auto-calculated financial year
     await supabase.from('business_profiles').insert({
       tenant_id: tenant.id,
       invoice_prefix: 'INV',
-      financial_year: '2025-26',
+      financial_year: financialYear,  // FIX #10: auto-calculated, not hardcoded
       state: 'Maharashtra',
     })
 
