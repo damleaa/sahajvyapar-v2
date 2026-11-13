@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 
-const PLAN_MAP: Record<string, { plan: string; amount: number }> = {
-  'plan_TMlnM2FDQdMa6h': { plan: 'starter', amount: 399 },
-  'plan_TMloXZIHDd9U86': { plan: 'growth', amount: 699 },
-  'plan_TMlp7WcudeUjQ1': { plan: 'pro', amount: 999 },
+function getPlanMap(): Record<string, { plan: string; amount: number }> {
+  return {
+    [process.env.RAZORPAY_PLAN_STARTER || 'plan_TRezg1wQxJx0V0']: { plan: 'starter', amount: 399 },
+    [process.env.RAZORPAY_PLAN_GROWTH || 'plan_TRf0LpcAbFOU9c']: { plan: 'growth', amount: 699 },
+    [process.env.RAZORPAY_PLAN_PRO || 'plan_TRf0seDjj0Io7D']: { plan: 'pro', amount: 999 },
+  }
 }
 
 function getAdminClient() {
@@ -37,7 +39,7 @@ export async function POST(req: NextRequest) {
   const supabase = getAdminClient()
   const subscriptionId = subscription.id
   const planId = subscription.plan_id
-  const planInfo = PLAN_MAP[planId]
+  const planInfo = getPlanMap()[planId]
 
   // Calculate dates
   const now = new Date()
@@ -54,7 +56,7 @@ export async function POST(req: NextRequest) {
     ? new Date(trialEnd.getTime() + 30 * 24 * 60 * 60 * 1000)
     : nextMonth
 
-  // Find tenant
+  // Find tenant by subscription ID
   let { data: tenant } = await supabase
     .from('tenants')
     .select('id, email, plan, plan_expires_at')
@@ -80,14 +82,11 @@ export async function POST(req: NextRequest) {
 
   switch (eventType) {
     case 'subscription.activated':
-      // On activation during trial — plan stays trial until trial ends
-      // but subscription is registered
       if (planInfo) {
         await supabase.from('tenants').update({
           razorpay_subscription_id: subscriptionId,
           razorpay_plan_id: planId,
           plan: planInfo.plan,
-          // Keep existing expiry if still in trial, else set to next month
           plan_status: 'active',
           plan_expires_at: nextMonth.toISOString(),
           next_payment_due: nextPaymentDue.toISOString(),
@@ -99,26 +98,30 @@ export async function POST(req: NextRequest) {
       }
       break
 
-    case 'subscription.charged':
-      // Recurring payment received — extend by 32 days from now
+    case 'subscription.charged': {
       if (planInfo) {
-        const newExpiry = new Date()
-        newExpiry.setDate(newExpiry.getDate() + 32)
-        const nextDue = new Date(newExpiry)
-        nextDue.setDate(nextDue.getDate() + 30)
+        // Use billing cycle end from Razorpay payload (current_end) for accuracy.
+        // Falls back to now + 32 days if not present.
+        const currentEnd = subscription.current_end
+          ? new Date(subscription.current_end * 1000)
+          : (() => { const d = new Date(); d.setDate(d.getDate() + 32); return d })()
+
+        const nextDue = new Date(currentEnd)
+        nextDue.setDate(nextDue.getDate() + 1)
 
         await supabase.from('tenants').update({
           plan: planInfo.plan,
           plan_status: 'active',
-          plan_expires_at: newExpiry.toISOString(),
+          plan_expires_at: currentEnd.toISOString(),
           next_payment_due: nextDue.toISOString(),
           is_active: true,
           grace_period_ends_at: null,
           suspended_at: null,
         }).eq('id', tenant.id)
-        console.log(`Charged: ${tenant.email} → extended to ${newExpiry.toLocaleDateString()}`)
+        console.log(`Charged: ${tenant.email} → access until ${currentEnd.toLocaleDateString()}`)
       }
       break
+    }
 
     case 'subscription.cancelled':
       await supabase.from('tenants').update({
