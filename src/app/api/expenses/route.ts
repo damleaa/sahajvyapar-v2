@@ -1,0 +1,3 @@
+import { NextResponse } from 'next/server'; import { createClient } from '@/lib/supabase/server'
+async function ctx(){const db=await createClient();const {data:{user}}=await db.auth.getUser();if(!user)return null;const {data:t}=await db.from('tenants').select('id').eq('owner_id',user.id).single();return t?{db,t}:null}
+export async function POST(r:Request){const c=await ctx();if(!c)return NextResponse.json({error:'Unauthorized'},{status:401});const b=await r.json();const {data,error}=await c.db.from('expenses').insert({...b,tenant_id:c.t.id}).select().single();return NextResponse.json(error?{error:error.message}:{data},{status:error?400:200})}

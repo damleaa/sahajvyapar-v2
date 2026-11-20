@@ -1,0 +1,55 @@
+'use client'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+
+export default function SuperAdminLogin() {
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const router = useRouter()
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+
+    // FIX #7: Validate password server-side, not in browser bundle
+    const res = await fetch('/api/admin/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
+
+    if (res.ok) {
+      // C-02 FIX: Session is tracked via HttpOnly cookie set by /api/admin/auth — no sessionStorage needed
+      router.push('/superadmin/dashboard')
+    } else {
+      setError('Invalid password')
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="w-12 h-12 bg-purple-600 rounded-xl flex items-center justify-center text-white font-bold text-xl mx-auto mb-3">⚡</div>
+          <h1 className="text-white text-xl font-bold">SahajVyapar Admin</h1>
+          <p className="text-slate-400 text-sm mt-1">Superadmin Access Only</p>
+        </div>
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-8">
+          {error && <div className="bg-red-500/10 border border-red-500/20 text-red-400 rounded-lg p-3 mb-4 text-sm">{error}</div>}
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Admin Password</label>
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="input-base" placeholder="••••••••" required autoFocus />
+            </div>
+            <button type="submit" disabled={loading} className="btn-primary w-full py-3">
+              {loading ? 'Verifying...' : 'Access Admin Panel →'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  )
+}
