@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verifySession } from '@/lib/tenant-guard'
+import { requireTenantAccess } from '@/lib/tenant-guard'
 
 async function sendRefundRequestEmail(tenant: any, reason: string) {
   const resendKey = process.env.RESEND_API_KEY
@@ -41,8 +41,8 @@ async function sendRefundRequestEmail(tenant: any, reason: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await verifySession(req)
-  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const guard = await requireTenantAccess()
+  if (!guard.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { reason } = await req.json()
 
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   const { data: tenant } = await supabase
     .from('tenants')
     .select('id, business_name, owner_name, email, plan, plan_status, plan_expires_at, razorpay_subscription_id')
-    .eq('id', session.tenantId)
+    .eq('id', guard.tenant.id)
     .single()
 
   if (!tenant) return NextResponse.json({ error: 'Tenant not found' }, { status: 404 })
