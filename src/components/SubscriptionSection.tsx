@@ -24,6 +24,9 @@ export default function SubscriptionSection() {
   const [processing, setProcessing] = useState(false)
   const [showPlans, setShowPlans] = useState(false)
   const [showGST, setShowGST] = useState(false)
+  const [showRefund, setShowRefund] = useState(false)
+  const [refundReason, setRefundReason] = useState('')
+  const [refundSubmitting, setRefundSubmitting] = useState(false)
   const { toast, ToastContainer } = useToast()
 
   useEffect(() => {
@@ -82,6 +85,19 @@ export default function SubscriptionSection() {
     } catch { toast('Something went wrong. Please try again.', 'error'); setProcessing(false) }
   }
 
+  const submitRefundRequest = async () => {
+    setRefundSubmitting(true)
+    const r = await fetch('/api/subscriptions/refund-request', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason: refundReason })
+    }).then(r => r.json())
+    setRefundSubmitting(false)
+    if (r.error) { toast(r.error, 'error'); return }
+    toast(r.message, 'success')
+    setShowRefund(false)
+    setRefundReason('')
+  }
+
   const cancelSubscription = async () => {
     if (!confirm('Cancel auto-renewal? You can still use the app until your current period ends.')) return
     setProcessing(true)
@@ -103,6 +119,11 @@ export default function SubscriptionSection() {
   const isTrial = status?.plan_status === 'trial'
   const isActive = status?.plan_status === 'active'
   const isCancelled = status?.plan_status === 'cancelled'
+
+  // Refund eligibility: active paid plan, within 7 days of payment
+  const paymentDate = expiresAt ? new Date(expiresAt.getTime() - 30 * 24 * 60 * 60 * 1000) : null
+  const daysSincePayment = paymentDate ? Math.floor((Date.now() - paymentDate.getTime()) / 864e5) : 999
+  const isRefundEligible = isActive && !isTrial && !isCancelled && daysSincePayment <= 7
 
   const planColor: any = { starter: 'text-amber-400', growth: 'text-blue-400', pro: 'text-purple-400' }
   const planBg: any = { starter: 'bg-amber-500/10 border-amber-500/20', growth: 'bg-blue-500/10 border-blue-500/20', pro: 'bg-purple-500/10 border-purple-500/20' }
@@ -207,8 +228,47 @@ export default function SubscriptionSection() {
             </button>
           </>
         )}
+        {isRefundEligible && (
+          <button onClick={() => setShowRefund(true)}
+            className="px-4 py-2.5 rounded-lg text-sm font-medium text-orange-400 hover:bg-orange-500/10 border border-orange-500/20 transition-all">
+            Request Refund
+          </button>
+        )}
       </div>
       <p className="text-slate-600 text-xs">All prices inclusive of 18% GST &middot; Auto-renews monthly &middot; Cancel anytime &middot; Secure payment via Razorpay</p>
+
+      {/* Refund Request Modal */}
+      {showRefund && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md">
+            <h3 className="text-white font-semibold text-lg mb-1">Request a Refund</h3>
+            <p className="text-slate-400 text-sm mb-4">
+              Refunds are processed within 2 business days of your request. Amount will be credited to your original payment method within 5–7 business days.
+            </p>
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 mb-4 text-xs text-amber-400">
+              ⚠️ Submitting a refund request will cancel your subscription. You will lose access at the end of your current billing period.
+            </div>
+            <label className="text-slate-400 text-xs font-medium block mb-1.5">Reason for refund (optional)</label>
+            <textarea
+              value={refundReason}
+              onChange={e => setRefundReason(e.target.value)}
+              placeholder="Tell us why you'd like a refund..."
+              rows={3}
+              className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-slate-500 resize-none mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => { setShowRefund(false); setRefundReason('') }}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 border border-slate-700 transition-all">
+                Cancel
+              </button>
+              <button onClick={submitRefundRequest} disabled={refundSubmitting}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-orange-600 hover:bg-orange-500 text-white transition-all disabled:opacity-50">
+                {refundSubmitting ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Plan Selection */}
       {showPlans && (
