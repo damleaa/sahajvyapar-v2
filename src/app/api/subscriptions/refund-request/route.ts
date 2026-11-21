@@ -5,18 +5,30 @@ import { requireTenantAccess } from '@/lib/tenant-guard'
 async function fetchLatestRazorpayPayment(subscriptionId: string) {
   const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
   const secret = process.env.RAZORPAY_KEY_SECRET
-  if (!key || !secret) return null
+  if (!key || !secret) {
+    console.error('Razorpay fetch: missing credentials', { key: !!key, secret: !!secret })
+    return null
+  }
   try {
     const auth = Buffer.from(`${key}:${secret}`).toString('base64')
-    const res = await fetch(`https://api.razorpay.com/v1/payments?subscription_id=${subscriptionId}&count=10`, {
+    // Correct Razorpay endpoint for subscription payments
+    const url = `https://api.razorpay.com/v1/subscriptions/${subscriptionId}/payments`
+    const res = await fetch(url, {
       headers: { 'Authorization': `Basic ${auth}` },
     })
-    if (!res.ok) return null
     const data = await res.json()
-    // payments are newest-first; find the last captured one
+    console.log('Razorpay payments response:', JSON.stringify({ status: res.status, count: data.count, itemsLen: data.items?.length, error: data.error }))
+    if (!res.ok) {
+      console.error('Razorpay API error:', data.error)
+      return null
+    }
     const payments: any[] = data.items || []
     const captured = payments.find((p: any) => p.status === 'captured')
-    if (!captured) return null
+    if (!captured) {
+      console.log('No captured payment found among', payments.length, 'payments')
+      return null
+    }
+    console.log('Found captured payment:', captured.id, 'method:', captured.method)
     return {
       paymentId: captured.id,
       amount: captured.amount / 100,
@@ -26,7 +38,8 @@ async function fetchLatestRazorpayPayment(subscriptionId: string) {
       cardNetwork: captured.card?.network || null,
       createdAt: new Date(captured.created_at * 1000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
     }
-  } catch {
+  } catch (e: any) {
+    console.error('Razorpay fetch exception:', e.message)
     return null
   }
 }
