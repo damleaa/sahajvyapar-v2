@@ -155,6 +155,33 @@ export async function POST(req: NextRequest) {
       // only when the period actually ends.
       await adminClient.from('tenants').update({ plan_status: 'cancelling' }).eq('id', tenant.id)
 
+      // Notify admin of cancellation
+      const resendKey = process.env.RESEND_API_KEY
+      if (resendKey) {
+        fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            from: 'SahajVyapar <noreply@sahajvyapar.in>',
+            to: ['support@sahajvyapar.in', 'investment.aadamle@gmail.com'],
+            reply_to: tenant.email,
+            subject: `Auto-renewal Cancelled — ${tenant.business_name} (${tenant.plan} plan)`,
+            html: `
+              <h2>Subscription Cancellation Notice</h2>
+              <table style="border-collapse:collapse;width:100%;font-family:sans-serif;font-size:14px;">
+                <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Business</td><td style="padding:8px;border:1px solid #ddd;">${tenant.business_name}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Owner</td><td style="padding:8px;border:1px solid #ddd;">${tenant.owner_name}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Email</td><td style="padding:8px;border:1px solid #ddd;">${tenant.email}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Plan</td><td style="padding:8px;border:1px solid #ddd;">${tenant.plan}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Razorpay Subscription ID</td><td style="padding:8px;border:1px solid #ddd;">${tenant.razorpay_subscription_id}</td></tr>
+                <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Action</td><td style="padding:8px;border:1px solid #ddd;">Auto-renewal cancelled — access continues until billing period ends</td></tr>
+              </table>
+              <p style="color:#999;font-size:12px;">No refund is due unless the customer separately requests one within 7 days of their last payment.</p>
+            `,
+          }),
+        }).catch(e => console.error('Cancel notification email failed:', e.message))
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Auto-renewal cancelled. You can use the app until your current period ends.',

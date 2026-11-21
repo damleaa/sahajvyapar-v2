@@ -17,7 +17,7 @@ async function sendRefundRequestEmail(tenant: any, reason: string) {
     headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       from: 'SahajVyapar <noreply@sahajvyapar.in>',
-      to: ['support@sahajvyapar.in'],
+      to: ['support@sahajvyapar.in', 'investment.aadamle@gmail.com'],
       reply_to: tenant.email,
       subject: `Refund Request — ${tenant.business_name} (${tenant.plan} plan, Rs.${amount})`,
       html: `
