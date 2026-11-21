@@ -8,7 +8,7 @@ async function fetchLatestRazorpayPayment(subscriptionId: string) {
   if (!key || !secret) return null
   try {
     const auth = Buffer.from(`${key}:${secret}`).toString('base64')
-    const res = await fetch(`https://api.razorpay.com/v1/subscriptions/${subscriptionId}/payments`, {
+    const res = await fetch(`https://api.razorpay.com/v1/payments?subscription_id=${subscriptionId}&count=10`, {
       headers: { 'Authorization': `Basic ${auth}` },
     })
     if (!res.ok) return null
