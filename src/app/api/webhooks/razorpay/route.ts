@@ -182,6 +182,15 @@ export async function POST(req: NextRequest) {
             : (() => { const d = new Date(); d.setDate(d.getDate() + 32); return d })()
           const nextDue = new Date(currentEnd)
           nextDue.setDate(nextDue.getDate() + 1)
+          // Extract payment details from webhook payload
+          const paymentEntity = payload?.payment?.entity
+          const paymentId = paymentEntity?.id || null
+          const paymentMethod = paymentEntity?.method || null
+          const paymentVpa = paymentEntity?.vpa || null
+          const paymentRrn = paymentEntity?.acquirer_data?.rrn || paymentEntity?.acquirer_data?.bank_transaction_id || null
+          const paymentNotes = paymentMethod
+            ? `${paymentMethod}${paymentVpa ? ':' + paymentVpa : ''}${paymentRrn ? ':rrn=' + paymentRrn : ''}`
+            : null
           const { error } = await supabase.from('tenants').update({
             plan: planInfo.plan,
             plan_status: 'active',
@@ -190,9 +199,11 @@ export async function POST(req: NextRequest) {
             is_active: true,
             grace_period_ends_at: null,
             suspended_at: null,
+            ...(paymentId && { payment_id: paymentId }),
+            ...(paymentNotes && { payment_notes: paymentNotes }),
           }).eq('id', tenant.id)
           if (error) updateError = error.message
-          else console.log(`Charged: ${tenant.email} → until ${currentEnd.toLocaleDateString()}`)
+          else console.log(`Charged: ${tenant.email} → until ${currentEnd.toLocaleDateString()}, payment: ${paymentId}`)
         }
         break
       }

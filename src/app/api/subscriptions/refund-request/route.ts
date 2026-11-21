@@ -2,48 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { requireTenantAccess } from '@/lib/tenant-guard'
 
-async function fetchLatestRazorpayPayment(subscriptionId: string) {
-  const key = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
-  const secret = process.env.RAZORPAY_KEY_SECRET
-  if (!key || !secret) {
-    console.error('Razorpay fetch: missing credentials', { key: !!key, secret: !!secret })
-    return null
-  }
-  try {
-    const auth = Buffer.from(`${key}:${secret}`).toString('base64')
-    // Correct Razorpay endpoint for subscription payments
-    const url = `https://api.razorpay.com/v1/subscriptions/${subscriptionId}/payments`
-    const res = await fetch(url, {
-      headers: { 'Authorization': `Basic ${auth}` },
-    })
-    const data = await res.json()
-    console.log('Razorpay payments response:', JSON.stringify({ status: res.status, count: data.count, itemsLen: data.items?.length, error: data.error }))
-    if (!res.ok) {
-      console.error('Razorpay API error:', data.error)
-      return null
-    }
-    const payments: any[] = data.items || []
-    const captured = payments.find((p: any) => p.status === 'captured')
-    if (!captured) {
-      console.log('No captured payment found among', payments.length, 'payments')
-      return null
-    }
-    console.log('Found captured payment:', captured.id, 'method:', captured.method)
-    return {
-      paymentId: captured.id,
-      amount: captured.amount / 100,
-      method: captured.method,
-      bankRrn: captured.acquirer_data?.rrn || captured.acquirer_data?.bank_transaction_id || '—',
-      vpa: captured.vpa || null,
-      cardNetwork: captured.card?.network || null,
-      createdAt: new Date(captured.created_at * 1000).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-    }
-  } catch (e: any) {
-    console.error('Razorpay fetch exception:', e.message)
-    return null
-  }
-}
-
 async function sendRefundRequestEmail(tenant: any, reason: string) {
   const resendKey = process.env.RESEND_API_KEY
   if (!resendKey) return
@@ -54,18 +12,18 @@ async function sendRefundRequestEmail(tenant: any, reason: string) {
     ? new Date(new Date(tenant.plan_expires_at).getTime() - 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN')
     : 'Unknown'
 
-  // Try to get richer payment details from Razorpay
-  const payment = tenant.razorpay_subscription_id
-    ? await fetchLatestRazorpayPayment(tenant.razorpay_subscription_id)
-    : null
-
-  const methodLabel = payment
-    ? payment.method === 'upi'
-      ? `UPI${payment.vpa ? ` (${payment.vpa})` : ''}`
-      : payment.method === 'card'
-      ? `Card${payment.cardNetwork ? ` (${payment.cardNetwork})` : ''}`
-      : payment.method
-    : '—'
+  // Parse payment details stored by webhook (format: "method:vpa:rrn=xxx")
+  const paymentId = tenant.payment_id && tenant.payment_id.startsWith('pay_') ? tenant.payment_id : '—'
+  const notes = tenant.payment_notes || ''
+  const notesParts = notes.split(':')
+  const methodRaw = notesParts[0] || ''
+  const vpa = notesParts[1] || null
+  const rrnPart = notesParts.find((p: string) => p.startsWith('rrn='))
+  const bankRrn = rrnPart ? rrnPart.replace('rrn=', '') : '—'
+  const methodLabel = methodRaw === 'upi'
+    ? `UPI${vpa ? ` (${vpa})` : ''}`
+    : methodRaw === 'card' ? 'Card'
+    : methodRaw || '—'
 
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -85,16 +43,16 @@ async function sendRefundRequestEmail(tenant: any, reason: string) {
           <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Plan</td><td style="padding:8px;border:1px solid #ddd;">${tenant.plan} — Rs.${amount}/month</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;background:#f9f9f9;" colspan="2">Payment Details</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Razorpay Subscription ID</td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;">${tenant.razorpay_subscription_id || '—'}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Razorpay Payment ID</td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;">${payment?.paymentId || '—'}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Payment Amount</td><td style="padding:8px;border:1px solid #ddd;">Rs.${payment?.amount ?? amount}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Razorpay Payment ID</td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;">${paymentId}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Payment Amount</td><td style="padding:8px;border:1px solid #ddd;">Rs.${amount}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Payment Method</td><td style="padding:8px;border:1px solid #ddd;">${methodLabel}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Bank RRN</td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;">${payment?.bankRrn ?? '—'}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Payment Date</td><td style="padding:8px;border:1px solid #ddd;">${payment?.createdAt ?? paidOn}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Bank RRN</td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;">${bankRrn}</td></tr>
+          <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Approx. Payment Date</td><td style="padding:8px;border:1px solid #ddd;">${paidOn}</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;background:#f9f9f9;" colspan="2">Refund Request</td></tr>
           <tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">Reason</td><td style="padding:8px;border:1px solid #ddd;">${reason || 'Not provided'}</td></tr>
         </table>
         <p style="margin-top:16px;color:#555;font-size:13px;">
-          To process: open Razorpay Dashboard → Transactions → search Payment ID <strong>${payment?.paymentId || tenant.razorpay_subscription_id}</strong> → click "Issue refund" → enter Rs.${amount}.
+          To process: open Razorpay Dashboard → Transactions → search Payment ID <strong>${paymentId !== '—' ? paymentId : tenant.razorpay_subscription_id}</strong> → click "Issue refund" → enter Rs.${amount}.
         </p>
         <p style="color:#999;font-size:12px;">This request was submitted from within the SahajVyapar app.</p>
       `,
@@ -115,7 +73,7 @@ export async function POST(req: NextRequest) {
 
   const { data: tenant } = await supabase
     .from('tenants')
-    .select('id, business_name, owner_name, email, plan, plan_status, plan_expires_at, razorpay_subscription_id')
+    .select('id, business_name, owner_name, email, plan, plan_status, plan_expires_at, razorpay_subscription_id, payment_id, payment_notes')
     .eq('id', guard.tenant.id)
     .single()
 
