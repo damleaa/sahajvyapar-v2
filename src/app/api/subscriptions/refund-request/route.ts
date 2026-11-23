@@ -53,7 +53,7 @@ async function sendRefundRequestEmail(tenant: any, reason: string) {
     <div style="font-family:sans-serif;font-size:14px;max-width:600px;">
       <h2 style="color:#2d7a4f;">Refund Request Received</h2>
       <p>Dear ${tenant.owner_name},</p>
-      <p>We have received your refund request for the <strong>${tenant.plan} plan (Rs.${amount})</strong>. Here is what to expect:</p>
+      <p>We have received your refund request for the <strong>${tenant.plan} plan (Rs.${amount})</strong>. Your account has been <strong>deactivated</strong> as of today. Here is what to expect next:</p>
       <table style="border-collapse:collapse;width:100%;font-size:14px;margin:16px 0;">
         <tr>
           <td style="padding:10px 12px;border:1px solid #ddd;font-weight:bold;width:40%;">Refund Amount</td>
@@ -152,11 +152,48 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Cancel Razorpay subscription immediately (not at cycle end)
+  if (tenant.razorpay_subscription_id) {
+    try {
+      const rzpKey = process.env.RAZORPAY_KEY_ID
+      const rzpSecret = process.env.RAZORPAY_KEY_SECRET
+      if (rzpKey && rzpSecret) {
+        const cancelRes = await fetch(
+          `https://api.razorpay.com/v1/subscriptions/${tenant.razorpay_subscription_id}/cancel`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Basic ' + Buffer.from(`${rzpKey}:${rzpSecret}`).toString('base64'),
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ cancel_at_cycle_end: 0 }),
+          }
+        )
+        const cancelData = await cancelRes.json()
+        console.log('Razorpay subscription cancel result:', cancelData?.status, cancelData?.id)
+      }
+    } catch (e: any) {
+      console.error('Razorpay subscription cancel failed (non-fatal):', e.message)
+    }
+  }
+
+  // Suspend account in Supabase
+  const { error: suspendErr } = await supabase.from('tenants').update({
+    plan_status: 'cancelled',
+    is_active: false,
+    suspended_at: new Date().toISOString(),
+  }).eq('id', tenant.id)
+
+  if (suspendErr) {
+    console.error('Failed to suspend account:', suspendErr.message)
+  }
+
   try {
     await sendRefundRequestEmail(tenant, reason)
-    return NextResponse.json({ ok: true, message: 'Refund request submitted. We will respond within 2 business days.' })
+    return NextResponse.json({ ok: true, message: 'Refund request submitted. Your account has been deactivated. We will process your refund within 2 business days.' })
   } catch (e: any) {
     console.error('Refund request email failed:', e.message)
-    return NextResponse.json({ error: 'Failed to submit request. Please email support@sahajvyapar.in directly.' }, { status: 500 })
+    // Account is already suspended — still return ok (email is non-critical)
+    return NextResponse.json({ ok: true, message: 'Refund request submitted. Your account has been deactivated. We will process your refund within 2 business days.' })
   }
 }
