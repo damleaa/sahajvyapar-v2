@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   const adminClient = await getAdminClient()
   const { data: tenant } = await adminClient
     .from('tenants')
-    .select('id, plan, plan_status, plan_expires_at, razorpay_subscription_id, business_name, owner_name, email')
+    .select('id, plan, plan_status, plan_expires_at, razorpay_subscription_id, business_name, owner_name, email, payment_id')
     .eq('owner_id', user.id)
     .single()
 
@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
       business_name: tenant.business_name,
       owner_name: tenant.owner_name,
       email: tenant.email,
+      payment_id: tenant.payment_id,
     })
   }
 

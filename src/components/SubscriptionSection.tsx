@@ -118,12 +118,16 @@ export default function SubscriptionSection() {
   const isExpired = daysLeft <= 0
   const isTrial = status?.plan_status === 'trial'
   const isActive = status?.plan_status === 'active'
+  const isCancelling = status?.plan_status === 'cancelling'
   const isCancelled = status?.plan_status === 'cancelled'
 
-  // Refund eligibility: active paid plan, within 7 days of payment
+  // Refund eligibility: only after user has explicitly cancelled auto-renewal (cancelling state),
+  // has a real payment_id, and within 7 days of payment.
+  // payment_id starting with 'pay_test_' is a test record — no real payment was made.
   const paymentDate = expiresAt ? new Date(expiresAt.getTime() - 30 * 24 * 60 * 60 * 1000) : null
   const daysSincePayment = paymentDate ? Math.floor((Date.now() - paymentDate.getTime()) / 864e5) : 999
-  const isRefundEligible = isActive && !isTrial && !isCancelled && daysSincePayment <= 7
+  const hasRealPayment = status?.payment_id && !status.payment_id.startsWith('pay_test_')
+  const isRefundEligible = isCancelling && hasRealPayment && daysSincePayment <= 7
 
   const planColor: any = { starter: 'text-amber-400', growth: 'text-blue-400', pro: 'text-purple-400' }
   const planBg: any = { starter: 'bg-amber-500/10 border-amber-500/20', growth: 'bg-blue-500/10 border-blue-500/20', pro: 'bg-purple-500/10 border-purple-500/20' }
@@ -179,8 +183,9 @@ export default function SubscriptionSection() {
             <div className="flex items-center gap-2 mt-2 flex-wrap">
               <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
                 isActive ? 'bg-green-500/15 text-green-400' :
+                isCancelling ? 'bg-orange-500/15 text-orange-400' :
                 isTrial ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
-              }`}>{isTrial ? 'Trial' : isActive ? 'Active' : isCancelled ? 'Cancelled' : 'Expired'}</span>
+              }`}>{isTrial ? 'Trial' : isActive ? 'Active' : isCancelling ? 'Cancelling' : isCancelled ? 'Cancelled' : 'Expired'}</span>
               {expiresAt && (
                 <span className={`text-sm ${isExpired ? 'text-red-400' : daysLeft <= 5 ? 'text-amber-400' : 'text-slate-400'}`}>
                   {isExpired ? 'Expired' : `${daysLeft} days left`} &middot; {expiresAt.toLocaleDateString('en-IN')}
@@ -205,6 +210,11 @@ export default function SubscriptionSection() {
             ⏰ {isTrial ? 'Trial' : 'Plan'} expires in {daysLeft} day{daysLeft !== 1 ? 's' : ''}. Subscribe to avoid interruption.
           </div>
         )}
+        {isCancelling && (
+          <div className="mt-4 p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg text-sm text-orange-400">
+            ℹ️ Cancellation requested. Access continues until {expiresAt?.toLocaleDateString('en-IN')}. You may request a refund below.
+          </div>
+        )}
         {isCancelled && (
           <div className="mt-4 p-3 bg-slate-700/50 rounded-lg text-sm text-slate-400">
             ℹ️ Auto-renewal cancelled. Access continues until {expiresAt?.toLocaleDateString('en-IN')}.
@@ -214,12 +224,12 @@ export default function SubscriptionSection() {
 
       {/* Actions */}
       <div className="flex gap-3 flex-wrap mb-2">
-        {(!isActive || isTrial || isExpired || isCancelled) && (
+        {(!isActive || isTrial || isExpired || isCancelled || isCancelling) && (
           <button onClick={() => setShowPlans(true)} className="btn-primary">
-            {isTrial ? 'Subscribe Now' : isExpired ? 'Renew Now' : isCancelled ? 'Resubscribe' : 'Subscribe'}
+            {isTrial ? 'Subscribe Now' : isExpired ? 'Renew Now' : (isCancelled || isCancelling) ? 'Resubscribe' : 'Subscribe'}
           </button>
         )}
-        {isActive && !isCancelled && (
+        {isActive && !isCancelled && !isCancelling && (
           <>
             <button onClick={() => setShowPlans(true)} className="btn-secondary">Change Plan</button>
             <button onClick={cancelSubscription} disabled={processing}
