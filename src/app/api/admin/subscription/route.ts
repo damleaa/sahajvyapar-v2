@@ -160,7 +160,7 @@ export async function POST(req: NextRequest) {
       headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         from: 'SahajVyapar <noreply@sahajvyapar.in>',
-        to: ['support@sahajvyapar.in', 'investment.aadamle@gmail.com'],
+        to: ['support@sahajvyapar.in', 'investment.aadamle@gmail.com', 'sahajvyapar@gmail.com'],
         subject: `Password Reset Sent — ${tenantData?.business_name || email}`,
         html: `
           <div style="font-family:sans-serif;max-width:480px;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px;">
