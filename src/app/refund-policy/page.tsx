@@ -23,7 +23,7 @@ export default function RefundPolicy() {
       <div style={{ maxWidth: 760, margin: '0 auto', padding: '48px 24px 80px' }}>
         <div style={{ marginBottom: 32 }}>
           <h1 style={{ fontSize: 28, fontWeight: 700, color: 'white', marginBottom: 8 }}>Refund & Cancellation Policy</h1>
-          <p style={{ color: '#64748b', fontSize: 13 }}>Last updated: 13 November 2026</p>
+          <p style={{ color: '#64748b', fontSize: 13 }}>Last updated: 23 November 2026</p>
         </div>
 
         {p('This policy governs refunds and cancellations for subscriptions to SahajVyapar, operated by Emotiquant Technologies OPC Pvt. Ltd.')}
@@ -33,7 +33,8 @@ export default function RefundPolicy() {
           <div style={{ fontSize: 13, fontWeight: 600, color: '#3b82f6', marginBottom: 8 }}>Quick Summary</div>
           <ul style={{ color: '#94a3b8', fontSize: 13, lineHeight: 1.7, paddingLeft: '1.25rem', margin: 0 }}>
             <li>7-day free trial — no charge, cancel anytime</li>
-            <li>Cancel subscription — access until period ends, no partial refund</li>
+            <li>Cancel subscription within 7 days of payment — full refund, account deactivated immediately</li>
+            <li>After 7 days — no refund; access continues until period ends</li>
             <li>Technical failure preventing use — prorated refund for affected period (see details below)</li>
             <li>Duplicate charge — full refund within 5–7 business days</li>
             <li>Refund processing: 5–7 business days to original payment method</li>
@@ -45,12 +46,18 @@ export default function RefundPolicy() {
 
         {h2('2. Subscription Cancellation')}
         {p('You may cancel your subscription at any time through:')}
-        {ul(['Settings → Plan & Subscription → Cancel Auto-renewal', 'Emailing us at support@sahajvyapar.in'])}
-        {p('Upon cancellation:')}
+        {ul(['Settings → Plan & Subscription → Cancel Subscription', 'Emailing us at support@sahajvyapar.in'])}
+        {p('Upon cancellation within 7 days of payment:')}
+        {ul([
+          'Your subscription is cancelled immediately.',
+          'A full refund is initiated to your original payment method within 5–7 business days.',
+          'Your account is deactivated immediately upon cancellation.',
+        ])}
+        {p('Upon cancellation after 7 days of payment:')}
         {ul([
           'Your subscription will not auto-renew at the next billing date.',
           'You retain full access to all features until the end of your current paid billing period.',
-          'No partial refunds are issued for unused days within a billing period.',
+          'No refund is issued for the remaining unused days.',
         ])}
 
         {h2('3. Eligibility for Refund')}
@@ -87,8 +94,7 @@ export default function RefundPolicy() {
         {h2('4. Non-Refundable Cases')}
         {p('Refunds will NOT be issued for:')}
         {ul([
-          'Change of mind after subscription payment',
-          'Partial month usage after cancellation (access continues to period end)',
+          'Cancellation requests made more than 7 days after the payment date',
           'Failure to cancel before auto-renewal date',
           'Dissatisfaction with features that were accurately described on our website',
           'Accounts suspended due to Terms of Service violations',
