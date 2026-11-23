@@ -24,9 +24,9 @@ export default function SubscriptionSection() {
   const [processing, setProcessing] = useState(false)
   const [showPlans, setShowPlans] = useState(false)
   const [showGST, setShowGST] = useState(false)
-  const [showRefund, setShowRefund] = useState(false)
-  const [refundReason, setRefundReason] = useState('')
-  const [refundSubmitting, setRefundSubmitting] = useState(false)
+  const [showCancel, setShowCancel] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelSubmitting, setCancelSubmitting] = useState(false)
   const { toast, ToastContainer } = useToast()
 
   useEffect(() => {
@@ -85,29 +85,17 @@ export default function SubscriptionSection() {
     } catch { toast('Something went wrong. Please try again.', 'error'); setProcessing(false) }
   }
 
-  const submitRefundRequest = async () => {
-    setRefundSubmitting(true)
+  const submitCancellation = async () => {
+    setCancelSubmitting(true)
     const r = await fetch('/api/subscriptions/refund-request', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reason: refundReason })
+      body: JSON.stringify({ reason: cancelReason })
     }).then(r => r.json())
-    setRefundSubmitting(false)
+    setCancelSubmitting(false)
     if (r.error) { toast(r.error, 'error'); return }
-    toast(r.message, 'success')
-    setShowRefund(false)
-    setRefundReason('')
-  }
-
-  const cancelSubscription = async () => {
-    if (!confirm('Cancel auto-renewal? You can still use the app until your current period ends.')) return
-    setProcessing(true)
-    const r = await fetch('/api/subscriptions', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'cancel_subscription' })
-    }).then(r => r.json())
-    setProcessing(false)
-    if (r.error) { toast(r.error, 'error'); return }
-    toast(r.message || 'Auto-renewal cancelled.')
+    toast(r.message || 'Subscription cancelled and refund initiated.', 'success')
+    setShowCancel(false)
+    setCancelReason('')
     loadStatus()
   }
 
@@ -121,13 +109,11 @@ export default function SubscriptionSection() {
   const isCancelling = status?.plan_status === 'cancelling'
   const isCancelled = status?.plan_status === 'cancelled'
 
-  // Refund eligibility: only after user has explicitly cancelled auto-renewal (cancelling state),
-  // has a real payment_id, and within 7 days of payment.
-  // payment_id starting with 'pay_test_' is a test record — no real payment was made.
+  // Cancel + refund available: active paid plan, real payment_id, within 7 days of payment
   const paymentDate = expiresAt ? new Date(expiresAt.getTime() - 30 * 24 * 60 * 60 * 1000) : null
   const daysSincePayment = paymentDate ? Math.floor((Date.now() - paymentDate.getTime()) / 864e5) : 999
   const hasRealPayment = status?.payment_id && !status.payment_id.startsWith('pay_test_')
-  const isRefundEligible = isCancelling && hasRealPayment && daysSincePayment <= 7
+  const canCancel = isActive && hasRealPayment && daysSincePayment <= 7
 
   const planColor: any = { starter: 'text-amber-400', growth: 'text-blue-400', pro: 'text-purple-400' }
   const planBg: any = { starter: 'bg-amber-500/10 border-amber-500/20', growth: 'bg-blue-500/10 border-blue-500/20', pro: 'bg-purple-500/10 border-purple-500/20' }
@@ -212,7 +198,7 @@ export default function SubscriptionSection() {
         )}
         {isCancelling && (
           <div className="mt-4 p-3 bg-orange-500/10 border border-orange-500/20 rounded-lg text-sm text-orange-400">
-            ℹ️ Cancellation requested. Access continues until {expiresAt?.toLocaleDateString('en-IN')}. You may request a refund below.
+            ⏳ Cancellation in progress. Your refund will be processed within 2–5 business days.
           </div>
         )}
         {isCancelled && (
@@ -229,51 +215,45 @@ export default function SubscriptionSection() {
             {isTrial ? 'Subscribe Now' : isExpired ? 'Renew Now' : (isCancelled || isCancelling) ? 'Resubscribe' : 'Subscribe'}
           </button>
         )}
-        {isActive && !isCancelled && !isCancelling && (
-          <>
-            <button onClick={() => setShowPlans(true)} className="btn-secondary">Change Plan</button>
-            <button onClick={cancelSubscription} disabled={processing}
-              className="px-4 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all disabled:opacity-50">
-              Cancel Auto-renewal
-            </button>
-          </>
+        {isActive && !isCancelling && (
+          <button onClick={() => setShowPlans(true)} className="btn-secondary">Change Plan</button>
         )}
-        {isRefundEligible && (
-          <button onClick={() => setShowRefund(true)}
-            className="px-4 py-2.5 rounded-lg text-sm font-medium text-orange-400 hover:bg-orange-500/10 border border-orange-500/20 transition-all">
-            Request Refund
+        {canCancel && (
+          <button onClick={() => setShowCancel(true)}
+            className="px-4 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-500/10 border border-red-500/20 transition-all">
+            Cancel Subscription
           </button>
         )}
       </div>
       <p className="text-slate-600 text-xs">All prices inclusive of 18% GST &middot; Auto-renews monthly &middot; Cancel anytime &middot; Secure payment via Razorpay</p>
 
-      {/* Refund Request Modal */}
-      {showRefund && (
+      {/* Cancel Subscription Modal */}
+      {showCancel && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-md">
-            <h3 className="text-white font-semibold text-lg mb-1">Request a Refund</h3>
+            <h3 className="text-white font-semibold text-lg mb-1">Cancel Subscription</h3>
             <p className="text-slate-400 text-sm mb-4">
-              Refunds are processed within 2 business days of your request. Amount will be credited to your original payment method within 5–7 business days.
+              Your subscription will be cancelled immediately and a full refund will be credited to your original payment method within 5–7 business days.
             </p>
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-3 mb-4 text-xs text-amber-400">
-              ⚠️ Submitting a refund request will cancel your subscription. You will lose access at the end of your current billing period.
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-4 text-xs text-red-400">
+              ⚠️ Your account will be deactivated immediately on cancellation.
             </div>
-            <label className="text-slate-400 text-xs font-medium block mb-1.5">Reason for refund (optional)</label>
+            <label className="text-slate-400 text-xs font-medium block mb-1.5">Reason for cancellation (optional)</label>
             <textarea
-              value={refundReason}
-              onChange={e => setRefundReason(e.target.value)}
-              placeholder="Tell us why you'd like a refund..."
+              value={cancelReason}
+              onChange={e => setCancelReason(e.target.value)}
+              placeholder="Tell us why you're cancelling..."
               rows={3}
               className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-slate-500 resize-none mb-4"
             />
             <div className="flex gap-3">
-              <button onClick={() => { setShowRefund(false); setRefundReason('') }}
+              <button onClick={() => { setShowCancel(false); setCancelReason('') }}
                 className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 border border-slate-700 transition-all">
-                Cancel
+                Keep Subscription
               </button>
-              <button onClick={submitRefundRequest} disabled={refundSubmitting}
-                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-orange-600 hover:bg-orange-500 text-white transition-all disabled:opacity-50">
-                {refundSubmitting ? 'Submitting...' : 'Submit Request'}
+              <button onClick={submitCancellation} disabled={cancelSubmitting}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-semibold bg-red-600 hover:bg-red-500 text-white transition-all disabled:opacity-50">
+                {cancelSubmitting ? 'Cancelling...' : 'Cancel & Refund'}
               </button>
             </div>
           </div>
