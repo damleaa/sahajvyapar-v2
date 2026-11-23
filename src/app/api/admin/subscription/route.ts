@@ -96,12 +96,49 @@ export async function POST(req: NextRequest) {
 
   if (action === 'reset_password') {
     if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 })
+
+    // Fetch tenant details for the notification email
+    const { data: tenantData } = await supabase
+      .from('tenants')
+      .select('business_name, owner_name, plan')
+      .eq('id', tenant_id)
+      .single()
+
     const { error } = await supabase.auth.admin.generateLink({
       type: 'recovery',
       email,
       options: { redirectTo: 'https://sahajvyapar.in/reset-password' }
     })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+    // Notify admins that a reset link was sent
+    const resendKey = process.env.RESEND_API_KEY
+    if (resendKey) {
+      const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'full', timeStyle: 'short' })
+      fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: 'SahajVyapar <noreply@sahajvyapar.in>',
+          to: ['support@sahajvyapar.in', 'investment.aadamle@gmail.com'],
+          subject: `Password Reset Sent — ${tenantData?.business_name || email}`,
+          html: `
+            <div style="font-family:sans-serif;max-width:480px;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:12px;">
+              <h2 style="color:#60a5fa;margin-top:0;">Password Reset Link Sent</h2>
+              <table style="width:100%;border-collapse:collapse;">
+                <tr><td style="padding:6px 0;color:#94a3b8;width:120px;">Business</td><td style="color:#fff;font-weight:600;">${tenantData?.business_name || '—'}</td></tr>
+                <tr><td style="padding:6px 0;color:#94a3b8;">Owner</td><td style="color:#fff;">${tenantData?.owner_name || '—'}</td></tr>
+                <tr><td style="padding:6px 0;color:#94a3b8;">Email</td><td style="color:#60a5fa;">${email}</td></tr>
+                <tr><td style="padding:6px 0;color:#94a3b8;">Plan</td><td style="color:#fff;">${tenantData?.plan || '—'}</td></tr>
+                <tr><td style="padding:6px 0;color:#94a3b8;">Sent at</td><td style="color:#94a3b8;">${now} IST</td></tr>
+              </table>
+              <p style="color:#475569;font-size:12px;margin-top:16px;">Reset link redirects to https://sahajvyapar.in/reset-password</p>
+            </div>
+          `,
+        }),
+      }).catch(e => console.error('Admin reset notification failed:', e.message))
+    }
+
     return NextResponse.json({ success: true, message: `Password reset email sent to ${email}` })
   }
 
