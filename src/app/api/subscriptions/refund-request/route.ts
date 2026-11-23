@@ -135,7 +135,12 @@ export async function POST(req: NextRequest) {
 
   if (!tenant) return NextResponse.json({ error: 'Tenant not found' }, { status: 404 })
 
-  // Only allow refund request if active paid plan (not trial)
+  // Trial users cannot request refund — no payment was made
+  if (tenant.plan_status === 'trial') {
+    return NextResponse.json({ error: 'Refunds are not applicable during the free trial period. No payment has been made.' }, { status: 400 })
+  }
+
+  // Only allow refund if on active paid plan
   if (tenant.plan_status !== 'active') {
     return NextResponse.json({ error: 'No active paid plan to refund.' }, { status: 400 })
   }

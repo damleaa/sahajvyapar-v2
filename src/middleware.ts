@@ -54,10 +54,10 @@ export async function middleware(request: NextRequest) {
 
     if (tenant) {
       const now = new Date()
-      const expiresAt = new Date(tenant.plan_expires_at)
+      const expiresAt = tenant.plan_expires_at ? new Date(tenant.plan_expires_at) : null
       const gracePeriodEnds = tenant.grace_period_ends_at ? new Date(tenant.grace_period_ends_at) : null
 
-      // Account fully suspended → block login
+      // Hard block: account explicitly suspended / cancelled
       if (!tenant.is_active) {
         if (!isExpiredPage) {
           const url = request.nextUrl.clone()
@@ -66,8 +66,8 @@ export async function middleware(request: NextRequest) {
         }
       }
 
-      // After grace period but not yet suspended → block
-      if (gracePeriodEnds && now > gracePeriodEnds && tenant.plan_status === 'expired') {
+      // Trial expired → redirect to account-expired (upgrade page)
+      if (tenant.plan_status === 'trial' && expiresAt && now > expiresAt) {
         if (!isExpiredPage) {
           const url = request.nextUrl.clone()
           url.pathname = '/account-expired'
@@ -75,8 +75,29 @@ export async function middleware(request: NextRequest) {
         }
       }
 
-      // During grace period (3 days) → allow but dashboard shows banner
-      // This is handled in the dashboard layout
+      // Paid plan expired + grace period elapsed → block
+      if (
+        tenant.plan_status === 'expired' ||
+        (tenant.plan_status === 'active' && expiresAt && now > expiresAt)
+      ) {
+        const derivedGrace = gracePeriodEnds ?? (expiresAt ? new Date(expiresAt.getTime() + 3 * 24 * 60 * 60 * 1000) : null)
+        if (!derivedGrace || now > derivedGrace) {
+          if (!isExpiredPage) {
+            const url = request.nextUrl.clone()
+            url.pathname = '/account-expired'
+            return NextResponse.redirect(url)
+          }
+        }
+      }
+
+      // Cancelled → always block
+      if (tenant.plan_status === 'cancelled') {
+        if (!isExpiredPage) {
+          const url = request.nextUrl.clone()
+          url.pathname = '/account-expired'
+          return NextResponse.redirect(url)
+        }
+      }
     }
   }
 
