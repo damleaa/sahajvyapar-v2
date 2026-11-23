@@ -31,10 +31,10 @@ export default function LoginPage() {
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2.5 mb-3">
+          <Link href="/" className="inline-flex items-center gap-2.5 mb-3 no-underline">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white font-bold text-lg">S</div>
             <span className="text-white text-xl font-bold">SahajVyapar</span>
-          </div>
+          </Link>
           <p className="text-slate-400 text-sm">Inventory & Business Management</p>
         </div>
 
