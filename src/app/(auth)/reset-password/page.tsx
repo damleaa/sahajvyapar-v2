@@ -19,36 +19,56 @@ function ResetPasswordForm() {
   useEffect(() => {
     const supabase = createClient()
 
-    // Supabase recovery links put tokens in the URL hash.
-    // We must let onAuthStateChange handle the SIGNED_IN event that
-    // Supabase fires after it exchanges the hash token for a session.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') {
-        if (session) {
-          setValidSession(true)
-          setError('')
-        }
+    // Listen for auth state changes — Supabase fires PASSWORD_RECOVERY
+    // once it processes the hash token
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN') && session) {
+        setValidSession(true)
+        setError('')
       }
     })
 
-    // Also check if there's already a valid session (page reload case)
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setValidSession(true)
-    })
+    // Manually extract tokens from the URL hash and set the session.
+    // onAuthStateChange alone can miss it if the hash is parsed before
+    // the listener is registered — this ensures we never miss it.
+    const hash = window.location.hash.substring(1)
+    if (hash) {
+      const params = new URLSearchParams(hash)
+      const accessToken = params.get('access_token')
+      const refreshToken = params.get('refresh_token')
+      if (accessToken && refreshToken) {
+        supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          .then(({ data, error }) => {
+            if (!error && data.session) {
+              setValidSession(true)
+              setError('')
+            }
+          })
+      } else if (accessToken) {
+        // Some flows only send access_token — try getSession after a tick
+        setTimeout(() => {
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session) { setValidSession(true); setError('') }
+          })
+        }, 500)
+      }
+    } else {
+      // No hash — check if already logged in (e.g. page reload)
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) setValidSession(true)
+      })
+    }
 
-    return () => subscription.unsubscribe()
-  }, [])
-
-  // Show error only after a moment if no session established — avoids flash
-  useEffect(() => {
-    if (validSession) return
+    // Show error only after delay to avoid flash while tokens load
     const timer = setTimeout(() => {
-      if (!validSession) {
-        setError('Auth session missing!')
-      }
-    }, 2500)
-    return () => clearTimeout(timer)
-  }, [validSession])
+      setValidSession(v => {
+        if (!v) setError('This link has expired or is invalid. Please request a new reset link.')
+        return v
+      })
+    }, 3000)
+
+    return () => { subscription.unsubscribe(); clearTimeout(timer) }
+  }, [])
 
   const handleReset = async (e: React.FormEvent) => {
     e.preventDefault()

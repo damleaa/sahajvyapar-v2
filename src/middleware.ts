@@ -27,9 +27,10 @@ export async function middleware(request: NextRequest) {
   const isSuperAdmin = path.startsWith('/superadmin')
   const isExpiredPage = path === '/account-expired'
   const isApiRoute = path.startsWith('/api')
+  const isResetPassword = path === '/reset-password'
 
-  // API routes and superadmin — no auth check here
-  if (isApiRoute || isSuperAdmin) return supabaseResponse
+  // API routes, superadmin, and reset-password — no auth check here
+  if (isApiRoute || isSuperAdmin || isResetPassword) return supabaseResponse
 
   // Not logged in → redirect to login
   if (!user && isDashboard) {
