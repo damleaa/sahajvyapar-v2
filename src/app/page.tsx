@@ -157,9 +157,9 @@ export default function HomePage() {
           </Link>
           <div className="sv-nav-actions">
             <div className="sv-nav-links">
-              <a href="#howitworks" className="sv-nav-link">How it works</a>
-              <a href="#features" className="sv-nav-link">Features</a>
-              <a href="#pricing" className="sv-nav-link">Pricing</a>
+              <a href="/#howitworks" className="sv-nav-link">How it works</a>
+              <a href="/#features" className="sv-nav-link">Features</a>
+              <a href="/#pricing" className="sv-nav-link">Pricing</a>
             </div>
             <Link href="/login" className="sv-btn sv-btn-ghost">Login</Link>
             <Link href="/register" className="sv-btn sv-btn-primary">Start Free Trial</Link>
@@ -204,7 +204,7 @@ export default function HomePage() {
               </p>
               <div className="sv-hero-cta">
                 <Link href="/register" className="sv-btn sv-btn-primary sv-btn-lg">7 Din Free Try Karein →</Link>
-                <a href="#howitworks" className="sv-btn sv-btn-ghost sv-btn-lg">Kaise kaam karta hai?</a>
+                <a href="/#howitworks" className="sv-btn sv-btn-ghost sv-btn-lg">Kaise kaam karta hai?</a>
               </div>
               <div className="sv-hero-trust">
                 {['Koi credit card nahi', '7 din bilkul free', '5 minute mein setup'].map(t => (
@@ -434,7 +434,7 @@ export default function HomePage() {
             </div>
             <div>
               <div className="sv-footer-col-title">Product</div>
-              {[['#howitworks', 'How it works'], ['#features', 'Features'], ['#pricing', 'Pricing'], ['/register', 'Free Trial'], ['/login', 'Login']].map(([href, label]) => (
+              {[['/#howitworks', 'How it works'], ['/#features', 'Features'], ['/#pricing', 'Pricing'], ['/register', 'Free Trial'], ['/login', 'Login']].map(([href, label]) => (
                 <a key={label} href={href} className="sv-footer-link">{label}</a>
               ))}
             </div>
